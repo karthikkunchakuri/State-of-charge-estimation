@@ -1,0 +1,2622 @@
+#include <stdio.h>
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+#include <stdbool.h>
+#include <complex.h>
+#include <stdint.h>
+
+#include "voltage.h"
+#include "current.h"
+#include "time.h"
+
+#include "v.h"
+#include "i.h"
+
+//Function defination
+double ocvcalculate(double a,double a44,double a33,double a22,double a11, double a00);
+
+
+void choldowndate_3D(double L[][3],double x[]);
+
+
+void choldowndate_6D(double L[][6],double x[]);
+
+
+
+//State function
+void state_function( double states_X[3][7],  double parameters_Theta[6][1], double current, double k, double deltaT,int i, double sigma[3][7]); //DSRUKF State Funtion
+//Measurement Function
+double measurement_function(double states_X[3][1], double parameters_Theta[6][1], double current,double a3,double a2, double a1,double a0); //DSRUKF Measurement Function
+//Measurement Function_theta
+double measurement_function_theta(double states_X[3][1], double parameters_Theta[6][1],double current); //DSRUKF Measurement Function
+
+//Exponential Function
+double exp_fn(double in_exp);  //State function requires an exponential Function
+//QRD-6D
+void vec(double *x,double *y,double *z,double *w,double *m,double *n,int* ct);
+void rot(double *p,double *q,double *r,double *s,double *u,double *v,int *cr);
+void QRD_6D(double A[6][6]);
+//QRD-10D
+void vec_12D(double *x,double *y,double *z,double *w,double *m,double *n,double *o,double *p,double *q,double *r,double *s,double *t);
+void rot_12D(double *p,double *q,double *r,double *s,double *u,double *v,double *w,double *x,double *y,double *z,double *n,double *o,int *cr);
+void QRD_12D(double A[12][12]);
+
+int i,j ;
+//double  a0=3.319679,a1=1.572305,a2=-2.600204,a3=1.996503;
+
+double  a0=3.415505536221893,a1=0.616802887546856,a2=-0.514222502083097,a3=0.667759147141084;
+double  a44=-1.131,a33=14.88,a22=-71.96,a11=152,a00=-118.6;
+double x_meas[3];
+double xwm[2];
+double xwc[2];
+double theta_wm[2];
+double theta_wc[2];
+double SoC[12977];
+double P_dis_max[12977];
+double P_cha_max[12977];
+double theta_meas[6];
+double Stheta_time[6][6];
+double Xsigma_time[3][7];
+double x_sigma[3][7];
+double x_time[3][1];
+double d[7][3];
+double d1[6][3];
+double theta_time[6];
+double Sx_time_QRD[6][6];
+double Sx_time[3][3];
+double Thetasigma_meas[6][13];
+double D_sigma[13];
+double Thetasigma_meas_temp[6][1];
+double D_mean;
+double d_theta[13];
+double d1_theta[12];
+double Sd_QRD[12][12];
+double Sd;
+double d1_cc[6][13];
+double d2_cc[13][1];
+double PthetaD[6][1];
+double kk_theta[6][1];
+double Ud[6][1];
+double Xsigma_meas[3][7];
+double Y_sigma[7];
+double Xsigma_meas_temp[3][1];
+double y_mean;
+//double d_sigma[11];
+double d1_sigma[7];
+double d11_sigma[6];
+double Sy_QRD[6][6];
+double Sy;
+double d1_for_chol[3][1];
+double d3_cc[3][7];
+double d4_cc[7][1];
+double Pxy[3][1];
+double kk_x[3][1];
+double Uy[3][1];
+double soc_est;
+
+
+double t[3][3];  //written by aman to match triangularization_6d code with matlab
+double st[3][3] =
+ {{0, 0, 0},
+  {0, 0, 0},
+  {0, 0, 0}};       //written by aman to match triangularization_6d code with matlab
+
+
+int t_state_function[5];
+double t_measurement_function[5];
+double t_exp_fn[5];
+double t_vec[5];
+double t_rot[5];
+double t_QRD_6D[5];
+double t_vec_10D[5];
+double t_rot_10D[5];
+double t_QRD_10D[5];
+
+void main()
+{
+
+    FILE *fptr1 , *fptr2, *fptr3 , *fptr4 , *fptr5, *fptr6 , *fptr7, *fptr8, *fptr9 , *fptr10, *fptr11 , *fptr12, *fptr13, *fptr14, *fptr15;
+    fptr1 = fopen("C:\\Users\\Aman Nigam\\Documents\\tt_comparison_mat_and_c\\soc_with_real_time_data.txt","w+");
+    fptr2 = fopen("C:\\Users\\Aman Nigam\\Documents\\tt_comparison_mat_and_c\\theta_meas_c_code.txt","w+");
+    fptr3 = fopen("C:\\Users\\Aman Nigam\\Documents\\tt_comparison_mat_and_c\\kk_theta_c_code.txt","w+");
+    fptr4 = fopen("C:\\Users\\Aman Nigam\\Documents\\tt_comparison_mat_and_c\\Vk_c_code.txt","w+");
+    fptr5 = fopen("C:\\Users\\Aman Nigam\\Documents\\tt_comparison_mat_and_c\\D_mean_c_code.txt","w+");
+    fptr6 = fopen("C:\\Users\\Aman Nigam\\Documents\\tt_comparison_mat_and_c\\theta_wm_c_code.txt","w+");
+    fptr7 = fopen("C:\\Users\\Aman Nigam\\Documents\\tt_comparison_mat_and_c\\D_sigma_c_code.txt","w+");
+    fptr8 = fopen("C:\\Users\\Aman Nigam\\Documents\\tt_comparison_mat_and_c\\x_time_c_code.txt","w+");
+ //   fptr9 = fopen("C:\\Users\\Aman Nigam\\Documents\\Thetasigma_meas_temp_c_code.txt","w+");
+    fptr10 = fopen("C:\\Users\\Aman Nigam\\Documents\\tt_comparison_mat_and_c\\Ik_c_code.txt","w+");
+    fptr11 = fopen("C:\\Users\\Aman Nigam\\Documents\\tt_comparison_mat_and_c\\Thetasigma_meas_c_code.txt","w+");
+    fptr12 = fopen("C:\\Users\\Aman Nigam\\Documents\\tt_comparison_mat_and_c\\Sd_before_chol_c_code.txt","w+");
+     fptr13 = fopen("C:\\Users\\Aman Nigam\\Documents\\tt_comparison_mat_and_c\\Sd_after_chol_c_code.txt","w+");
+      fptr14 = fopen("C:\\Users\\Aman Nigam\\Documents\\tt_comparison_mat_and_c\\Sd_QRD[0][0]_c_code.txt","w+");
+      fptr15 = fopen("C:\\Users\\Aman Nigam\\Documents\\tt_comparison_mat_and_c\\Sd_QRD_input_12d_c_code.txt","w+");
+
+
+
+	//Start of SoC algorithm
+	printf("Dual SRUKF for BMS--> program start!!\n");
+//double measured_voltage[4]={3.50544500350952,3.53735733032227,3.52245402336121,3.54448485374451};
+//double measured_current[4]={-0.937419772148132,-0.628090322017670,-0.774747431278229,-0.562589526176453};
+//double time[5]={22119.4169245472, 22120.4169530120,22121.4169595725,22122.4321373944,22123.4323472543,};
+double x_init[3] = {0.91,0,0};
+
+	printf("x_init = ");
+     for (i = 0; i <3 ; i++){
+        x_meas[i] = x_init[i];
+         printf("%f ", x_init[i]);}
+
+
+    float C1=1005.24554500748;printf("\nC1 = %f\n",C1);
+    float C2=16.5270225350585;printf("C2 = %f\n",C2);
+    float R1=0.0497423593776611;printf("R1 = %f\n",R1);
+    float R2=0.0377020407745524;printf("R2 = %f\n",R2);
+    float Rs=0.112399209541886;printf("Rs = %f\n",Rs);
+
+    float Qact =2.6; printf("\nQact = %f\n",Qact);
+    float openVoltage = 4.2; printf("openVoltage = %f\n",openVoltage);
+    float tau1=C1*R1;printf("tau1 = %f\n",tau1);
+    float tau2=C2*R2;printf("tau2 = %f\n",tau2);
+    double theta_init[6] = { Rs,R1,tau1,R2,tau2,openVoltage} ; //Parameters
+    double chol_Qx[3][3]={{0.0001,0,0},{0,0.0001,0},{0,0,0.0001}};
+
+    printf("theta_init = ");
+    for (i = 0; i < 6 ; i++){
+         printf("%f ", theta_init[i]);
+    }
+    //error covariance matrix
+    float Px_init[3][3] ={{0.02,0,0},{0,0.5,0},{0,0,0.5}} ;
+    printf("\n\nPx_init = \n");
+    for(i=0; i<3; i++) {
+      for(j=0;j<3;j++) {
+         printf("%f ", Px_init[i][j]);
+         if(j==2){
+            printf("\n");}}}
+
+    float Ptheta_init[6][6]={{0.01,0,0,0,0,0},
+                        {0,0.01,0,0,0,0},
+                        {0,0,0.01,0,0,0},
+                        {0,0,0,0.01,0,0},
+                        {0,0,0,0,0.01,0},
+                        {0,0,0,0,0,0.5}};
+    printf("\nPtheta_init = \n");
+    for(i=0; i<6; i++) {
+      for(j=0;j<6;j++) {
+         printf("%f ", Ptheta_init[i][j]);
+         if(j==5){
+            printf("\n");}}}
+
+    int Rx=1;printf("Rx = %d\n",Rx);
+    int Rtheta=12;printf("Rtheta = %d\n",Rtheta);
+    int eta=1;printf("eta = %d\n",eta);
+
+//Initializing the mean and covariance
+    float Sx_meas[3][3] ={{0.1414,0,0},{0,0.7071,0},{0,0,0.7071}} ;
+    printf("\n\nSx_meas = \n");
+    for(i=0; i<3; i++) {
+      for(j=0;j<3;j++) {
+         printf("%f ", Sx_meas[i][j]);
+         if(j==2){
+            printf("\n");}}}
+
+
+
+  float Stheta_meas[6][6]= {{0.1,0,0,0,0,0},
+                        {0,0.1,0,0,0,0},
+                        {0,0,0.1,0,0,0},
+                        {0,0,0,0.1,0,0},
+                        {0,0,0,0,0.1,0},
+                        {0,0,0,0,0,0.7071}};
+
+    printf("\n\nStheta_meas = \n");
+    for(i=0; i<6; i++) {
+      for(j=0;j<6;j++) {
+         printf("%f ", Stheta_meas[i][j]);
+         if(j==5){
+            printf("\n");}}}
+
+
+       double lambda_RLS;
+	lambda_RLS=0.9993; printf("\nlambda_RLS = %lf\n",lambda_RLS);
+
+	double alpha_x=0.02; printf("\nalpha_x = %lf\n",alpha_x);
+	double alpha_theta=0.1; printf("\nalpha_theta = %lf\n",alpha_theta);
+	double beta=2.0; printf("\nbeta = %lf\n",beta);
+
+	double x_length=3.0; printf("\nx_length = %lf\n",x_length);
+	double xsigma_length = 2*x_length+1; printf("\nxsigma_length = %lf\n",xsigma_length);
+	double theta_length=6.0; printf("\ntheta_length = %lf\n",theta_length);// change to 6
+double thetasigma_length = 2*theta_length+1; printf("\nthetasigma_length = %lf\n",thetasigma_length);
+	double x_kappa=0; printf("\nx_kappa = %lf\n",x_kappa);
+	double theta_kappa=3-x_length; printf("\ntheta_kappa = %lf\n",theta_kappa);
+
+	double x_lamda=(alpha_x*alpha_x)*(x_length+x_kappa)-x_length; printf("\nx_lamda = %lf\n",x_lamda);
+	double theta_lamda=(alpha_theta*alpha_theta)*(theta_length+theta_kappa)-theta_length; printf("\ntheta_lamda = %lf\n",theta_lamda);
+
+	double x_gamma=sqrt(x_length+x_lamda); printf("\nx_gamma = %lf\n",x_gamma);
+	double theta_gamma=sqrt(theta_length+theta_lamda); printf("\ntheta_gamma = %lf\n",theta_gamma);
+
+   // double Sx_init[3][3]={{3.162277660168380,0,0},{0,0.001,0},{0,0,0.001}};//extra
+
+
+    //BEGIN - Weight computation for x
+    xwm[0]=x_lamda/(x_length+x_lamda);
+    xwc[0]=xwm[0]+(1-alpha_x*alpha_x+beta);
+    xwm[1]=1/(2*(x_length+x_lamda));
+	xwc[1]=1/(2*(x_length+x_lamda));
+	//xwc[1]=419.7;
+
+    printf("\nxwm= \n");
+    for(i=0;i<2;i++){printf("%lf ",xwm[i]);}
+    printf("\nxwc= \n");
+    for(i=0;i<2;i++){printf("%lf ",xwc[i]);}
+    //END - Weight computation for x
+
+
+    //BEGIN - Weight computation for theta
+    theta_wm[0]=theta_lamda/(theta_length+theta_lamda);
+    theta_wc[0]=theta_wm[0]+(1-alpha_theta*alpha_theta+beta);
+    theta_wm[1]=1/(2*(theta_length+theta_lamda));
+    theta_wc[1]=1/(2*(theta_length+theta_lamda));
+    printf("\ntheta_wm= \n");
+    for(i=0;i<2;i++){printf("%lf ",theta_wm[i]);}
+    printf("\ntheta_wc= \n");
+    for(i=0;i<2;i++){printf("%lf ",theta_wc[i]);}
+    //END - Weight computation for theta
+
+    //theta_meas=theta_init;
+    printf("\ntheta_meas = \n");
+        for (i = 0; i < 6 ; i++){
+                theta_meas[i] = theta_init[i]; //theta_time=theta_meas=theta_init;
+                printf("%lf ", theta_meas[i]);}
+
+    //Begin of computation loop
+    for(int loopCount=1;loopCount<71;loopCount++)   //12977   //100
+	{
+	    printf("\n***********************loopCount= %d************************",loopCount);
+	    printf("\n\nx_length = %lf , x_lamda = %lf, xwm[0] = %lf\n\n",x_length,x_lamda,xwm[0]);
+
+
+/*
+	    //this is for 100 real time data
+
+
+		double Ik=-mi[loopCount];//Present measured current(Ik)
+		printf("\nIk=%f",Ik);
+		double Ik_1=-mi[loopCount-1];//Previous measured current(Ik)
+		printf("\nIk_1=%f",Ik_1);
+		double Vk=mv[loopCount];//Present Voltage
+		printf("\nVk=%f",Vk);
+
+*/
+
+		double Ik=-measured_current[loopCount+26650];//Present measured current(Ik)
+		printf("\nIk=%f",Ik);
+		double Ik_1=-measured_current[loopCount+26650-1];//Previous measured current(Ik)
+		printf("\nIk_1=%f",Ik_1);
+		double Vk=measured_voltage[loopCount+26650];//Present Voltage
+		printf("\nVk=%f",Vk);
+
+
+
+		double deltat=time[loopCount+26650]-time[loopCount+26650-1];//Time step
+		printf("\ndeltat=%f",deltat);
+		double k=eta*(deltat)/(Qact*3600);
+        printf("\nk=%f",k);
+
+
+
+
+        //BEGIN - Compute time update for Theta
+
+ /*
+        printf("\n\n\ntheta_time = \n");
+        for (i = 0; i < 6 ; i++){
+                theta_time[i] = theta_meas[i]; //theta_time=theta_meas=theta_init;
+                printf("%lf ", theta_time[i]);}
+
+
+ */
+
+        printf("\n\n\ntheta_time = \n");
+        for (i = 0; i < 6 ; i++){
+                theta_time[i] = theta_meas[i]; //theta_time=theta_meas=theta_init;
+                printf("%lf ", theta_time[i]);}
+
+
+      //for file
+        for (i = 0; i < 6 ; i++){
+           fprintf(fptr2,"%lf  ",theta_meas[i]);
+        }
+        fprintf(fptr2,"\n");
+      //for file
+
+
+
+
+        printf("\nStheta_meas = \n");
+        for(i=0; i<6; i++) {
+        for(j=0;j<6;j++) {
+            printf("%lf ", Stheta_meas[i][j]);
+        }
+            printf("\n");
+        }
+
+
+        printf("\nStheta_time = \n");
+        for(i=0; i<6; i++) {
+        for(j=0;j<6;j++) {
+         Stheta_time[i][j] = pow(lambda_RLS,-0.5)*Stheta_meas[i][j];
+         printf("%lf ", Stheta_time[i][j]);
+         if(j==5){
+            printf("\n");}
+        }}
+        //END - Compute time update for Theta
+
+
+//END - Compute time update for Theta
+
+        //BEGIN - Compute time update for x
+        //BEGIN - Compute x sigma points time
+  printf("\n\nXsigma_time=[Xsigma_time x_meas+x_gamma*Sx_meas x_meas-x_gamma*Sx_meas]; 3x7\n");
+
+
+        Xsigma_time[0][0]=x_meas[0];Xsigma_time[1][0]=x_meas[1];Xsigma_time[2][0]=x_meas[2];
+        for(i=0; i<3; i++) {
+        for(j=0;j<3;j++) {
+         Xsigma_time[i][j+1] = x_meas[i] + x_gamma*Sx_meas[i][j];
+         Xsigma_time[i][j+4] = x_meas[i] - x_gamma*Sx_meas[i][j];
+        }}
+        printf("\nXsigma_time = \n");
+        for(i=0; i<3; i++) {
+            for(j=0;j<7;j++) {
+                printf("%lf ", Xsigma_time[i][j]);
+                if(j==6){
+                printf("\n");}}}
+        //END - Compute x sigma points time
+
+
+        //BEGIN - Compute x sigma
+
+        double theta_time_temp[6][1];
+        for (i=0; i<6; i++){
+            theta_time_temp[i][0]=theta_init[i];
+        }
+        //double parameters_Theta[6][1]={{0.1124},{0.0497},{50.0033},{0.0377},{0.6231},{4.2000}};
+
+        for(i=0;i<7;i++)
+	    {state_function(Xsigma_time,  theta_time_temp,Ik_1, k, deltat,i, x_sigma);
+	    }
+
+        printf("\nx_sigma = \n");
+        for(i=0; i<3; i++) {
+        // inner loop for column
+            for(j=0; j<7; j++) {
+            printf("%lf ",x_sigma[i][j]);
+            }
+            printf("\n"); // new line
+        }
+        //END - Compute x sigma
+
+       //BEGIN - Compute x time
+
+        x_time[0][0]=xwm[0]*x_sigma[0][0]+xwm[1]*x_sigma[0][1]+xwm[1]*x_sigma[0][2]+xwm[1]*x_sigma[0][3]+xwm[1]*x_sigma[0][4]+xwm[1]*x_sigma[0][5]+xwm[1]*x_sigma[0][6];
+        x_time[1][0]=xwm[0]*x_sigma[1][0]+xwm[1]*x_sigma[1][1]+xwm[1]*x_sigma[1][2]+xwm[1]*x_sigma[1][3]+xwm[1]*x_sigma[1][4]+xwm[1]*x_sigma[1][5]+xwm[1]*x_sigma[1][6];
+        x_time[2][0]=xwm[0]*x_sigma[2][0]+xwm[1]*x_sigma[2][1]+xwm[1]*x_sigma[2][2]+xwm[1]*x_sigma[2][3]+xwm[1]*x_sigma[2][4]+xwm[1]*x_sigma[2][5]+xwm[1]*x_sigma[2][6];
+
+        printf("\n\nxwm[0] = %lf , xwm[1] = %lf\n\n", xwm[0],xwm[1]);
+        printf("\nx_time = \n");
+        for(i=0; i<3; i++)
+        {
+            printf("%lf ", x_time[i][0]);
+        }
+
+        //END - Compute x time
+
+
+// Starting Precompute_QR_input Module
+
+printf("\n\n\nStarting Precompute_QR_input Module\n\n\n");
+        //BEGIN - Compute weighted diff Sigma
+
+        printf("\nd = \n");
+        for( i=0; i<7; i++)
+        {
+            // inner loop for column
+            for( j=0; j<3; j++)
+            {
+                d[i][j] = x_sigma[j][i] - x_time[j][0];
+                printf("%lf ",d[i][j]);
+            }
+            printf("\n"); // new line
+        }
+
+
+printf("\n\n\nx_sigma[1][0] = %lf\n\n\n ",x_sigma[1][0]);
+
+
+        printf("\nd1 = \n");
+        for( i=0; i<6; i++)
+        {
+            // inner loop for column
+            for( j=0; j<3; j++)
+            {
+                d1[i][j] = sqrt(abs(xwc[1]))*d[i+1][j];
+                Sx_time_QRD[i][j] = d1[i][j];
+                printf("%lf ",d1[i][j]);
+            }
+            printf("\n"); // new line
+        }
+        //END - Compute weighted diff Sigma
+
+printf("\n\n\nEnding Precompute_QR_input Module\n\n\n");
+
+// Ending Precompute_QR_input Module
+
+
+// Starting triangularization_6d_a Module
+
+printf("\n\n\nStarting triangularization_6d_a Module\n\n\n");
+
+
+
+
+
+         //BEGIN - QRD 6D & Chol downdate
+
+
+          for( i=0; i<6; i++)
+        {
+            // inner loop for column
+            for( j=0; j<3; j++)
+            {
+                d1[i][j] = sqrt(abs(xwc[1]))*d[i+1][j];
+                Sx_time_QRD[i][j] = d1[i][j];
+                printf("Sx_time_QRD[%d][%d],%d%d = %lf\n ",i,j,i+1,j+1,Sx_time_QRD[i][j]);
+            }
+            printf("\n"); // new line
+        }
+
+        printf("Sx_time_QRD\n");
+         for( i=0; i<6; i++)
+        {
+            // inner loop for column
+            for( j=0; j<6; j++)
+            {
+               printf("%lf  ",Sx_time_QRD[i][j]);
+            }
+         printf("\n"); // new line
+        }
+        printf("\n");
+
+
+
+
+
+          QRD_6D(Sx_time_QRD);
+
+
+
+
+
+    printf("\nt = \n");
+
+        for( i=0; i<3; i++)
+        {
+            for( j=0; j<3; j++)
+            {
+                t[i][j]=(-1)*Sx_time_QRD[i][j];
+
+                printf("%lf ",t[i][j]);
+            }
+            printf("\n"); // new line
+        }
+
+    printf("\nst = \n");
+
+        for( i=0; i<3; i++)
+        {
+            for( j=i; j<3; j++)
+            {
+                st[i][j]=t[i][j];
+
+                printf("%lf ",st[i][j]);
+            }
+            printf("\n"); // new line
+        }
+
+    printf("\nSx_time = \n");
+        for( i=0; i<3; i++)
+        {
+            for( j=0; j<3; j++)
+            {
+                Sx_time[i][j] = st[i][j] + chol_Qx[i][j];
+
+                printf("%lf ",Sx_time[i][j]);
+            }
+            printf("\n"); // new line
+        }
+
+
+
+
+
+
+
+
+
+        //Cholesky downdate
+
+        printf("\n\nCholesky downdate starting\n\n");
+        printf("\n\n\nBefore choldowndate_3D\n\n\n");
+
+        double d1_for_chol[3][1];
+        printf("d1_for_chol=\n");
+        for( i=0; i<3; i++){
+
+       d1_for_chol[i][0]=sqrt(abs(xwc[0]))*  d[0][i];
+       printf("%f\n",d1_for_chol[i][0]);
+        }
+
+      printf("\nSx_time = \n");
+        for(i=0;i<3;i++){
+            for(j=0;j<3;j++){
+              printf("%lf ",Sx_time[i][j]);
+            }
+            printf("\n");
+        }
+
+
+    double  Sx_time_transpose[3][3];
+
+    printf("\nSx_time_transpose = \n");
+        for(i=0;i<3;i++){
+            for(j=0;j<3;j++){
+              Sx_time_transpose[i][j] = Sx_time[j][i];
+              printf("%lf ",Sx_time_transpose[i][j]);
+            }
+            printf("\n");
+        }
+
+
+       choldowndate_3D(Sx_time_transpose,d1_for_chol);
+
+       printf("\n\n\nAfter choldowndate_3D\n\n\n");
+
+        printf("\nSx_time = \n");
+        for(i=0;i<3;i++){
+            for(j=0;j<3;j++){
+              Sx_time[i][j] = Sx_time_transpose[j][i];
+              printf("%lf ",Sx_time[i][j]);
+            }
+            printf("\n");
+        }
+
+
+        //END - QRD 6D & Chol downdate
+
+
+     printf("\n\n\nEnding triangularization_6d_a Module\n\n\n");
+
+    // Ending triangularization_6d_a Module
+
+       //BEGIN - Theta sigma meas
+       //printf("%d",theta_time[0][0]);
+
+        Thetasigma_meas[0][0]=theta_time[0];
+        Thetasigma_meas[1][0]=theta_time[1];
+        Thetasigma_meas[2][0]=theta_time[2];
+        Thetasigma_meas[3][0]=theta_time[3];
+        Thetasigma_meas[4][0]=theta_time[4];
+        Thetasigma_meas[5][0]=theta_time[5];
+        for(i=0; i<6; i++) {
+        for(j=0;j<6;j++) {
+         Thetasigma_meas[i][j+1] = theta_time[i] + theta_gamma*Stheta_time[i][j];
+         Thetasigma_meas[i][j+7] = theta_time[i] - theta_gamma*Stheta_time[i][j];
+        }}
+
+         printf("\nThetasigma_meas = \n");
+        for(i=0; i<6; i++) {
+            // inner loop for column
+            for(j=0; j<13; j++) {
+              printf("%lf ",Thetasigma_meas[i][j]);
+            }
+            printf("\n"); // new line
+          }
+        //END - Theta sigma meas
+
+
+
+
+
+
+            //for file
+        for (i = 0; i < 3 ; i++){
+           fprintf(fptr8,"%lf  ",x_time[i][0]);
+        }
+        fprintf(fptr8,"\n");
+
+            //for file
+        for (i = 0; i < 6 ; i++){
+                for(j = 0; j < 13 ; j++){
+           fprintf(fptr11,"%lf  ",Thetasigma_meas[i][j]);
+        }
+        fprintf(fptr11,"\n");
+        }
+
+        fprintf(fptr11,"\n\n");
+
+
+           fprintf(fptr10,"%lf\n",Ik);
+
+
+
+
+
+      //for file
+
+
+
+
+
+
+
+        for(i=0;i<13;i++)
+		{
+			for(j=0;j<6;j++)
+			{
+				Thetasigma_meas_temp[j][0]=Thetasigma_meas[j][i];
+	//			fprintf(fptr9,"%lf  ",Thetasigma_meas_temp[j][0]);    // for file
+			}
+
+	//		fprintf(fptr9,"\n");           // for file
+
+			D_sigma[i]=measurement_function_theta(x_time, Thetasigma_meas_temp,Ik );
+
+		}
+		 printf("\nD_sigma = \n");
+        for(i=0;i<13;i++){
+            printf("%lf ",D_sigma[i]);
+        }
+        //END - D Sigma meas
+        	D_mean = theta_wm[0]*D_sigma[0] + theta_wm[1]*D_sigma[1]+theta_wm[1]*D_sigma[2]+theta_wm[1]*D_sigma[3]+theta_wm[1]*D_sigma[4]+theta_wm[1]*D_sigma[5]+theta_wm[1]*D_sigma[6]+theta_wm[1]*D_sigma[7]+theta_wm[1]*D_sigma[8]+theta_wm[1]*D_sigma[9]+theta_wm[1]*D_sigma[10]+theta_wm[1]*D_sigma[11]+theta_wm[1]*D_sigma[12];
+
+
+
+
+          //for file
+        for (i = 0; i < 2 ; i++){
+           fprintf(fptr6,"%lf  ",theta_wm[i]);
+        }
+        fprintf(fptr6,"\n");
+
+
+
+          for (i = 0; i < 13 ; i++){
+           fprintf(fptr7,"%lf  ",D_sigma[i]);
+        }
+        fprintf(fptr7,"\n");
+
+
+
+      //for file
+
+
+
+
+
+
+
+
+
+       //written by aman for debugging HDL
+    printf("\n\n\n\n\n\n\n\nAMAN NIGAM\n\n\n\n\n ");
+    printf("theta_wm[1] = %lf , D_sigma[1] = %lf ,   D_mean =  %lf , D_sigma[12] = %lf", theta_wm[1], D_sigma[1] , D_mean , D_sigma[12] );
+
+    printf("\n\n\nAMAN NIGAM\n\n\n\n\n\n\n\n ")    ;
+
+
+    //
+
+		printf("\nD_mean = %lf\n",D_mean);
+
+
+
+
+
+	// Starting Precompute_DQR_input Module
+
+printf("\n\n\nStarting Precompute_DQR_input Module\n\n\n");
+
+
+			    printf("\nd_theta = \n");
+            for(i=0;i<13;i++){
+                d_theta[i] = (D_sigma[i]-D_mean);
+            printf("%lf ",d_theta[i]);
+        }
+
+
+
+        printf("\nd1_theta = \n");
+        for(i=0;i<12;i++){
+            d1_theta[i] = (sqrt( theta_wc[1])*d_theta[i+1]);
+             printf("%lf *%lf=%lf\n ",sqrt( theta_wc[1]),d_theta[i+1],d1_theta[i]);
+          //  printf("%lf ",d1_theta[i]);
+
+        }
+
+
+
+        printf("\n\ntheta_wc[1] = %lf , D_mean = %lf \n\n ", theta_wc[1] , D_mean) ;
+        for(i=0;i<13;i++)
+              printf( "\nD_sigma[%d] = %lf \n", i , D_sigma[i]);
+
+        printf("\n\n\nEnding Precompute_DQR_input Module\n\n\n");
+
+        // Ending Precompute_DQR_input Module
+
+
+
+
+
+
+
+
+
+
+
+ printf("\nStarting QR12D\n");
+        //QRD_10D
+         //for (i=0;i<12;i++){
+         //   printf("\nSd_QRD[%d][0] = %lf\n",i,Sd_QRD[i][0]);
+        //}
+        double  Sd_QRD[12][12] =
+    {{0 ,   0 ,   0 ,    0,    0,   0,   0,   0,   0,   0,   0,   0 },
+    {0  ,   0 ,   0 ,    0,    0,   0,   0,   0,   0,   0,   0,   0 },
+    {0  ,   0 ,   0 ,    0,    0,   0,   0,   0,   0,   0,   0,   0 },
+    {0  ,   0 ,   0 ,    0,    0,   0,   0,   0,   0,   0,   0,   0 },
+    {0  ,   0 ,   0 ,    0,    0,   0,   0,   0,   0,   0,   0,   0 },
+    {0  ,   0 ,   0 ,    0,    0,   0,   0,   0,   0,   0,   0,   0 },
+    {0 ,   0 ,   0 ,    0,    0,   0,   0,   0,   0,   0,   0,   0 },
+    {0 ,   0 ,   0 ,    0,    0,   0,   0,   0,   0,   0,   0,   0 },
+    {0 ,   0 ,   0 ,    0,    0,   0,   0,   0,   0,   0,   0,   0 },
+    {0  ,   0 ,   0 ,    0,    0,   0,   0,   0,   0,   0,   0,   0 },
+    {0 ,   0 ,   0 ,    0,    0,   0,   0,   0,   0,   0,   0,   0 },
+    {0  ,   0 ,   0 ,    0,    0,   0,   0,   0,   0,   0,   0,   0 }};
+     /*printf("==============================================================================");
+        for(int i=0; i<12; i++) {
+            // inner loop for column
+            for(int j=0; j<12; j++) {
+
+              printf("\nA[%d][%d] = %lf",i,j, Sd_QRD[i][j]);
+            }
+             printf("\n"); // new line
+        }*/
+        printf("\n\nBefore QR12D\n\n");
+        printf("\nSd_QRD = \n");
+        for(int i=0; i<12; i++) {
+            // inner loop for column
+            for(int j=0; j<12; j++) {
+                Sd_QRD[i][0] =d1_theta[i];
+                printf("%lf ",Sd_QRD[i][j]);
+            }
+             printf("\n"); // new line
+        }
+
+
+      //  QRD_12D(Sd_QRD);
+       /* printf("==============================================================================");
+         for(int i=0; i<12; i++) {
+            // inner loop for column
+            for(int j=0; j<12; j++) {
+              printf("\nSd_QRD[%d][%d] = %lf",i,j,Sd_QRD[i][j]);
+            }
+            printf("\n"); // new line
+          }
+
+        for (i=0;i<12;i++){
+            printf("\nSd_QRD[%d][0] = %lf\n",i,Sd_QRD[i][0]);
+        }
+        */
+
+
+
+        for(int i=0; i<12; i++) {
+                fprintf(fptr15,"%lf  ",Sd_QRD[i][0]);
+        }
+        fprintf(fptr15,"\n");
+
+
+
+
+
+
+
+
+
+
+
+
+     int sign_12d;
+        // Written by aman to solve nan problem.
+        if(Sd_QRD[0][0] < -0.1)
+        {
+           QRD_12D(Sd_QRD);
+           if(Sd_QRD[0][0] >= 0)
+                 sign_12d = 1;
+           else
+                 sign_12d = -1;
+
+           Sd  = Sd_QRD[0][0] * sign_12d + sqrt(12);
+
+        }
+        else
+        {
+            QRD_12D(Sd_QRD);
+            Sd = (-1)*Sd_QRD[0][0]+sqrt(12);     //sqrt(Rtheta) = sqrt(12)
+        }
+      //  Sd = (-1)*Sd_QRD[0][0]+sqrt(10);
+
+
+
+
+      fprintf(fptr14,"%lf\n",Sd_QRD[0][0]);
+
+
+
+
+
+
+
+
+       printf("\n\nAfter QR12D\n\n");
+       printf("\nSd_QRD = \n");
+
+        for(int i=0; i<12; i++) {
+            // inner loop for column
+            for(int j=0; j<12; j++) {
+                printf("%lf ",Sd_QRD[i][j]);
+            }
+             printf("\n"); // new line
+        }
+
+        printf("\nSd = %lf\n",Sd);
+
+
+ printf("\nEnding QR12D\n");
+
+
+
+
+
+
+ fprintf(fptr12,"%lf\n",Sd);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ //START - Compute Cross correlation for theta      // written from MATLAB
+
+ printf("\n\n Starting Compute Cross correlation for theta\n\n");
+
+        printf("\nd1_cc = \n");
+        for(i=0;i<6;i++){
+            for(j=0;j<13;j++){
+                d1_cc[i][j]=Thetasigma_meas[i][j]-theta_time[i];
+                printf("%lf ",d1_cc[i][j]);
+            }
+            printf("\n");
+        }
+        printf("\nd2_cc = \n");
+        for(i=0;i<13;i++){
+            d2_cc[i][0] = D_sigma[i] - D_mean;
+            printf("%lf ",d2_cc[i][0]);
+            }
+
+        int m,n,n1;
+        m = 6; n=1;
+        n1 =13;
+        for(i=0;i<m;i++){
+        for(j=0;j<n;j++){
+            PthetaD[i][j]=0;
+            for(int k=0;k<n1;k++){
+                if(k==0)
+                {
+                PthetaD[i][j]=PthetaD[i][j]+theta_wc[0]*d1_cc[i][k]*d2_cc[k][j];}
+                else
+                {
+                    PthetaD[i][j]=PthetaD[i][j]+theta_wc[1]*d1_cc[i][k]*d2_cc[k][j];
+
+                }
+
+            }printf("\nPthetaD[%d][%d]=%f ",i,j,PthetaD[i][j]);
+
+        }}
+
+
+       /* PthetaD[0][0]=theta_wc[1]*PthetaD[0][0];
+        PthetaD[1][0]=theta_wc[1]*PthetaD[1][0];
+        PthetaD[2][0]=theta_wc[1]*PthetaD[2][0];
+        PthetaD[3][0]=theta_wc[1]*PthetaD[3][0];
+        PthetaD[4][0]=theta_wc[1]*PthetaD[4][0];
+        PthetaD[5][0]=theta_wc[1]*PthetaD[5][0];*/
+
+        printf("\nPthetaD = \n");
+        for(i=0;i<6;i++){
+            printf("%lf ",PthetaD[i][0]);
+        }
+
+
+
+
+printf("\n\n Ending Compute Cross correlation for theta\n\n");    // written from MATLAB
+
+
+
+
+
+        //END - Compute Cross correlation for theta
+
+
+
+
+
+
+
+
+
+
+
+
+
+    //  Starting kalmanGain_theta module
+    printf("\n\n\nStarting kalmanGain_theta module\n\n\n ");
+
+        printf("\nkk_theta = \n");
+        for(i=0;i<6;i++){
+            if(Sd != 0){kk_theta[i][0]=(PthetaD[i][0]/pow(Sd,2));}
+            else{kk_theta[i][0]= 0 ;}
+
+            printf("%lf ",kk_theta[i][0]);
+        }
+
+     printf("\n\n\nEnding kalmanGain_theta module\n\n\n ");
+      //  Ending kalmanGain_theta module
+
+
+
+        printf("\n  Ud = \n");
+        for(i=0;i<6;i++){
+         Ud[i][0] = kk_theta[i][0]*Sd;
+         printf("%lf ",Ud[i][0]);
+        }
+        //BEGIN - Theta Mean and Covariance Measurement update
+
+
+
+
+        for(i=0;i<6;i++){
+        theta_meas[i] = theta_time[i] + kk_theta[i][0]*(Vk-D_mean);}
+        printf("\nNew theta_meas = \n");
+        for(i=0;i<6;i++){
+            printf("%lf ",theta_meas[i]);
+        }
+
+
+      //for file
+        for (i = 0; i < 6 ; i++){
+           fprintf(fptr3,"%lf  ",kk_theta[i][0]);
+        }
+        fprintf(fptr3,"\n");
+      //for file
+
+      //for file
+        fprintf(fptr4,"%lf\n",Vk);
+        fprintf(fptr5,"%lf\n",D_mean);
+      //for file
+
+
+
+printf("\n\n\nStarting choldowndate_6D\n");
+
+ printf("\n\n\nBefore choldowndate_6D\n\n\n");
+
+      printf("\nStheta_meas = \n");
+
+        for(int i=0; i<6; i++) {
+            // inner loop for column
+            for(int j=0; j<6; j++) {
+                printf("%lf ",Stheta_meas[i][j]);
+            }
+             printf("\n"); // new line
+        }
+
+     printf("\nStheta_time = \n");
+
+        for(int i=0; i<6; i++) {
+            // inner loop for column
+            for(int j=0; j<6; j++) {
+                printf("%lf ",Stheta_time[i][j]);
+            }
+             printf("\n"); // new line
+        }
+
+    double  Stheta_time_transpose[6][6];
+
+    printf("\nStheta_time_transpose = \n");
+        for(i=0;i<6;i++){
+            for(j=0;j<6;j++){
+              Stheta_time_transpose[i][j] = Stheta_time[j][i];
+              printf("%lf ",Stheta_time_transpose[i][j]);
+            }
+            printf("\n");
+        }
+
+        printf("\n==================================================\n");
+        choldowndate_6D(Stheta_time_transpose,Ud);
+
+         printf("\nAfter choldowndate_6D\n");
+
+
+         printf("\nStheta_meas_dummy =\n");
+        double Stheta_meas_dummy[6][6] = {{0.0, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000},
+                                    {0.000000, 0.0, 0.000000, 0.000000, 0.000000, 0.000000},
+                              {0.000000, 0.000000, 0.0, 0.000000, 0.000000, 0.000000},
+                              {0.000000, 0.000000, 0.000000, 0.0, 0.000000, 0.000000},
+                              {0.000000, 0.000000, 0.000000, 0.000000, 0.0, 0.000000},
+                              {0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.0}};
+        for(int i=0; i<6; i++) {
+            // inner loop for column
+            for(int j=0; j<6; j++) {
+                Stheta_meas_dummy[i][j]=Stheta_meas_dummy[i][j]+Stheta_time_transpose[i][j];
+              printf("%lf ",Stheta_meas_dummy[i][j]);
+            }
+            printf("\n"); // new line
+          }
+
+    printf("\nStheta_meas =\n");
+
+        for(int i=0; i<6; i++) {
+            // inner loop for column
+            for(int j=0; j<6; j++) {
+                Stheta_meas[i][j]=Stheta_meas_dummy[j][i];         //taking transpose of matrix
+              printf("%lf ",Stheta_meas[i][j]);
+            }
+            printf("\n"); // new line
+          }
+
+     printf("\nStheta_time = \n");
+
+        for(int i=0; i<6; i++) {
+            // inner loop for column
+            for(int j=0; j<6; j++) {
+                printf("%lf ",Stheta_time[i][j]);
+            }
+             printf("\n"); // new line
+        }
+
+
+ printf("\n\n\nEnding choldowndate_6D\n\n\n");
+        //END - MEASUREMENT UPDATE FOR THETA
+
+
+        //BEGIN - MEASUREMENT UPDATE FOR X
+        //BEGIN X SIGMA MEAS
+
+          Xsigma_meas[0][0]=x_time[0][0];Xsigma_meas[1][0]=x_time[1][0];Xsigma_meas[2][0]=x_time[2][0];
+        for(i=0; i<3; i++) {
+        for(j=0;j<3;j++) {
+         Xsigma_meas[i][j+1] = x_time[i][0] + x_gamma*Sx_time[i][j];
+         Xsigma_meas[i][j+4] = x_time[i][0] - x_gamma*Sx_time[i][j];
+        }}
+        //END X SIGMA MEAS
+        printf("Xsigma_meas=\n");
+        	for(j=0;j<3;j++)
+		{
+			for(i=0;i<7;i++)
+			{
+			    //printf("Xsigma_meas[%d][%d]=%lf ",i,j,Xsigma_meas[i][j]);
+			    printf("%lf ",Xsigma_meas[j][i]);
+			}
+			printf("\n");
+		}
+
+
+		for(i=0;i<7;i++)
+		{
+			for(j=0;j<3;j++)
+			{
+
+				Xsigma_meas_temp[j][0]=Xsigma_meas[j][i];
+			}
+			printf("\n");
+			Y_sigma[i]=measurement_function(Xsigma_meas_temp, theta_time,Ik,a3,a2,a1,a0);
+		}
+
+		printf("\nY_sigma = \n");
+        for(i=0;i<7;i++){
+            printf("%lf ",Y_sigma[i]);
+        }
+
+        y_mean = xwm[0]*Y_sigma[0]+xwm[1]*Y_sigma[1]+xwm[1]*Y_sigma[2]+xwm[1]*Y_sigma[3]+xwm[1]*Y_sigma[4]+xwm[1]*Y_sigma[5]+xwm[1]*Y_sigma[6];
+		printf("\nY_mean = %lf\n",y_mean);
+
+
+
+
+
+
+// Starting Precompute_YQR_input Module
+
+        printf("\n\n\nStarting Precompute_YQR_input Module\n\n\n");
+
+
+		printf("\nd1_sigma=\n ");
+        for(i=0;i<7;i++){
+           d1_sigma[i]=(Y_sigma[i]-y_mean);
+            printf("%lf ",d1_sigma[i]);
+        }
+        printf("\nd11_sigma=\n ");
+		for(i=0;i<6;i++){
+           d11_sigma[i]=sqrt(xwc[1])*d1_sigma[i+1];
+            printf("%lf ",d11_sigma[i]);
+        }
+
+        printf("\n\n\nEnding Precompute_YQR_input Module\n\n\n");
+
+// Ending Precompute_YQR_input Module
+
+
+
+
+
+
+printf("\n\n\nStarting QRD_6D\n\n\n");
+
+
+
+         double  Sy_QRD[6][6]={{0.0, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000},
+                  {0.000000, 0.0, 0.000000, 0.000000, 0.000000, 0.000000},
+                  {0.000000, 0.000000, 0.0, 0.000000, 0.000000, 0.000000},
+                  {0.000000, 0.000000, 0.000000, 0.0, 0.000000, 0.000000},
+                  {0.000000, 0.000000, 0.000000, 0.000000, 0.0, 0.000000},
+                  {0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.0}};
+
+        printf("\nd11_sigma for QRD = \n");
+        for(i=0;i<6;i++){
+            Sy_QRD[i][0] =  d11_sigma[i];
+            printf("%lf ",d11_sigma[i]);
+        }
+
+
+        printf("\n\nAfter QRD_6D\n\n");
+
+
+        printf("\nSy_QRD= \n");
+        for( i=0; i<6; i++)
+        {
+            for( j=0; j<6; j++)
+            {
+
+                 printf("%lf ",Sy_QRD[i][j]);
+            }
+            printf("\n"); // new line
+        }
+
+		 //QRD 6D
+        QRD_6D(Sy_QRD);
+
+
+        printf("\n\nAfter QRD_6D\n\n");
+
+
+        printf("\nSy_QRD= \n");
+        for( i=0; i<6; i++)
+        {
+            for( j=0; j<6; j++)
+            {
+
+                 printf("%lf ",Sy_QRD[i][j]);
+            }
+            printf("\n"); // new line
+        }
+
+         Sy = (-1)*Sy_QRD[0][0] + sqrt(Rx);
+        printf("\nSy = %lf\n",Sy);
+
+
+printf("\n\n\nEnding QRD_6D\n\n\n");
+
+
+printf("\n\n\nStarting choldowndate_3D\n\n\n");
+
+        //Cholesky downdate
+        double d11_for_chol[3][1];
+
+        d11_for_chol[0][0]=sqrt(abs(xwc[0]))*  d1_sigma[0];
+        d11_for_chol[1][0]=0;
+        d11_for_chol[2][0]=0;
+
+        double Sy_for_chol[3][3];
+        Sy_for_chol[0][0]=Sy;
+        Sy_for_chol[0][1]=0;
+        Sy_for_chol[0][2]=0;
+
+        Sy_for_chol[1][0]=0;
+        Sy_for_chol[1][1]=0;
+        Sy_for_chol[1][2]=0;
+
+        Sy_for_chol[2][0]=0;
+        Sy_for_chol[2][1]=0;
+        Sy_for_chol[2][2]=0;
+
+        for(int i =0; i<3; i++)
+           printf("d11_for_chol[%d][0] = %lf",i,d11_for_chol[i][0]) ;
+           //d11_for_chol[0][0] = -1.303427       d11_for_chol[1][0] = 0.000000      d11_for_chol[2][0] = 0.000000
+           //Sy = 1.073259
+
+
+       choldowndate_3D(Sy_for_chol,d11_for_chol);
+       Sy = Sy_for_chol[0][0];
+
+        printf("\n\nSy=\n\n ");
+        printf("%lf",Sy);
+        //printf("\n %f",Xsigma_meas[0][0]);
+
+
+printf("\n\n\nEnding choldowndate_3D\n\n\n");
+
+
+
+
+
+// Starting X_CrossCorrelation module
+
+printf("\n\n\n Starting X_CrossCorrelation module \n\n\n");
+
+        printf("\n\nXsigma_meas\n\n");
+        for(i=0;i<3;i++){
+            for(j=0;j<7;j++){
+                printf(" %lf ", Xsigma_meas[i][j]);
+            }
+            printf("\n");
+        }
+
+        printf("\n\nx_time\n\n");
+        for(i=0;i<3;i++){
+                printf(" %lf ", x_time[i][0]);
+         }
+
+
+
+
+//Cross Correlation
+        double d3_cc[3][7];
+        printf("\nd3_cc = \n");
+        for(i=0;i<3;i++){
+            for(j=0;j<7;j++){
+                d3_cc[i][j]=Xsigma_meas[i][j]-x_time[i][0];
+                printf("%lf ",d3_cc[i][j]);
+            }
+            printf("\n");
+        }
+
+        printf("\nd4_cc = \n");
+        for(i=0;i<7;i++){
+            d4_cc[i][0] = Y_sigma[i] - y_mean;
+            printf("%lf ",d4_cc[i][0]);
+        }
+
+    printf("\nxwc= \n");
+    for(i=0;i<2;i++){printf("%lf ",xwc[i]);}
+
+
+        //multiplyMatrices(d3_cc,d4_cc,Pxy,3,7,7,1);
+        int p,q,r;
+        m = 3; n=1;
+        n1 =7;
+
+        printf("\n\n Multiplication \n\n");  // for debugging
+
+        for(p=0;p<m;p++){
+        for(q=0;q<n;q++){
+            Pxy[p][q]=0;
+            for(r=0;r<n1;r++){
+                if(r==0){
+                Pxy[p][q]=Pxy[p][q]+xwc[0]*d3_cc[p][r]*d4_cc[r][q];
+                printf(" %lf ", d3_cc[p][r]*d4_cc[r][q] ); // for debugging
+                }
+                else{
+                     Pxy[p][q]=Pxy[p][q]+xwc[1]*d3_cc[p][r]*d4_cc[r][q];
+                }
+            }}}
+
+
+
+        printf("\nPxy = \n");
+        for(i=0;i<3;i++){
+            printf("%lf ",Pxy[i][0]);
+        }
+
+
+
+printf("\n\n\n Ending X_CrossCorrelation module \n\n\n");
+
+
+// Ending X_CrossCorrelation module
+
+
+
+
+
+
+
+//  Starting kalmanGain_x module
+    printf("\n\n\nStarting kalmanGain_x module\n\n\n ");
+ printf("\nkk_x = \n");
+        for(i=0;i<3;i++){
+            if(Sy != 0){kk_x[i][0]=(Pxy[i][0]/Sy)/Sy;}
+            else{kk_x[i][0]= 0 ;}
+            Uy[i][0] = kk_x[i][0]*Sy;
+            printf("%lf ",kk_x[i][0]);
+        }
+       printf("Sy = %lf",Sy);
+        printf("\n\n\nEnding kalmanGain_x module\n\n\n ")    ;
+
+// Ending kalmanGain_x module
+
+
+        for(i=0;i<3;i++){
+        x_meas[i] = x_time[i][0] + kk_x[i][0]*(Vk-y_mean);}
+        printf("\nNew x_meas = \n");
+        for(i=0;i<3;i++){
+            printf("%lf ",x_meas[i]);
+        }
+        printf("\nUy = \n");
+        for(i=0;i<3;i++){
+            printf("%lf ",Uy[i][0]);
+        }
+
+
+
+
+printf("\n\n\nStarting choldowndate_3D\n\n\n");
+
+printf("\nBefore choldowndate_3D\n");
+
+     printf("\nSx_meas = \n");
+        for(i=0;i<3;i++){
+            for(j=0;j<3;j++){
+              printf("%lf ",Sx_meas[i][j]);
+            }
+            printf("\n");
+        }
+
+    printf("\nSx_time = \n");
+        for(i=0;i<3;i++){
+            for(j=0;j<3;j++){
+              printf("%lf ",Sx_time[i][j]);
+            }
+            printf("\n");
+        }
+
+
+    double  Sx_time_transpose1[3][3];
+
+    printf("\nSx_time_transpose1 = \n");
+        for(i=0;i<3;i++){
+            for(j=0;j<3;j++){
+              Sx_time_transpose1[i][j] = Sx_time[j][i];
+              printf("%lf ",Sx_time_transpose1[i][j]);
+            }
+            printf("\n");
+        }
+
+
+
+      choldowndate_3D(Sx_time_transpose1,Uy);    //written from MATLAB by aman
+
+     printf("\nAfter choldowndate_3D\n");
+
+     printf("\nSx_meas = \n");
+        for(i=0;i<3;i++){
+            for(j=0;j<3;j++){
+              Sx_meas[i][j] = Sx_time_transpose1[j][i];
+              printf("%lf ",Sx_meas[i][j]);
+            }
+            printf("\n");
+        }
+
+
+    printf("\nSx_time = \n");
+        for(i=0;i<3;i++){
+            for(j=0;j<3;j++){
+              printf("%lf ",Sx_time[i][j]);
+            }
+            printf("\n");
+        }
+
+
+
+
+
+        //END MEASUREMENT UPDATE FOR X
+         SoC[loopCount] = x_meas[0]*100;
+
+        printf("\n");
+        printf("\n");
+        printf("\n");
+        printf("\nComputed SOC : %lf\n",x_meas[0]*100);
+
+
+        fprintf(fptr1,"%lf\n",x_meas[0]*100);
+
+
+
+
+
+
+        //SOH Estimation
+        double soc1=0.7565;
+        double soc2= 0.1639;//interp1(ocv,soc,open_vol_lut(9001),'linear','extrap');
+        double BOL_cap = 2.600;//2600Ahr
+        //printf("\nBOL_cap : %lf\n",BOL_cap);
+        double delta_soc=delta_soc-Ik*deltat;
+        printf("\ndelta_soc : %lf\n",delta_soc);
+        double del_charge=delta_soc/3600;
+        //printf("\ndel_charge : %lf\n",del_charge);
+        double present_cap = del_charge/(soc2-soc1);
+        //printf("\npresent_cap : %lf\n",present_cap);
+/*
+          if(i==3000)
+              ch_accum1 = delta_soc;
+
+        if(i==3000)
+         {
+             soc3 = ocvcalculate(theta_meas(5),a44,a33,a22,a11,a00);
+             soc1 = ocvcalculate(4.2,a44,a33,a22,a11,a00);
+             ch_accum3000 = delta_soc;
+
+             cap_13 = (ch_accum3000 - ch_accum1)/(soc3-soc1);
+         }
+
+           if(i==6000)
+         {
+             soc4 = ocvcalculate(theta_meas(5),a44,a33,a22,a11,a00);
+             ch_accum6000 = delta_soc;
+             cap_34 = (ch_accum6000 - ch_accum3000)/(soc4-soc1);
+             Qact = cap_34;
+             cap_14 = (ch_accum6000/(soc3-soc1);
+         }
+
+         if(i==10063+976)
+            Qact = 2.59;
+
+          if(i==9000)
+         {
+             soc5 = ocvcalculate(theta_meas(5),a44,a33,a22,a11,a00);
+             ch_accum9000 = delta_soc;
+         }
+
+          if(i==12976)
+         {
+             soc2 = ocvcalculate(theta_meas(5),a44,a33,a22,a11,a00);
+             ch_accum12976 = delta_soc;
+         }
+
+
+*/
+
+
+
+
+
+
+
+        //double SoH = present_cap*100/BOL_cap;
+        double SoH = 100;
+        printf("\nSoH : %lf\n",SoH);
+
+        //SOP Computation
+
+
+
+
+
+
+        double I_dis_max = (theta_meas[5]-2.7)/(theta_meas[0]+theta_meas[1]+theta_meas[3]);
+        printf("\nI_dis_max : %lf\n",I_dis_max);
+        double I_cha_max = (4.2-theta_meas[5])/(theta_meas[0]+theta_meas[1]+theta_meas[3]);
+        printf("\nI_cha_max : %lf\n",I_cha_max);
+        P_dis_max[loopCount] = I_dis_max*2.7;
+        printf("\nP_dis_max : %lf\n",P_dis_max[loopCount]);
+        P_cha_max[loopCount] = I_cha_max*4.2;
+        printf("\nP_cha_max : %lf\n",P_cha_max[loopCount]);
+        double SoP = (P_cha_max[loopCount]>P_dis_max[loopCount]) ? P_cha_max[loopCount] : P_dis_max[loopCount];
+        printf("\nSoP : %lf\n",SoP);
+
+
+
+
+
+
+        double P_required = 15; // Based on the Load Requirement
+        int SoF = (SoP>P_required) ? 1:0;
+
+
+        //SOF Estimation
+        printf("\nSoF : %d\n",SoF);
+
+        printf("\n");
+        printf("\n");
+        printf("\n");
+
+  printf("\n\n\n\nBattery_states\n\n\n\n");
+
+        printf("\nComputed SOC : %lf\n",x_meas[0]*100);
+          printf("\nSoH : %lf\n",SoH);
+           printf("\nSoP : %lf\n",SoP);
+              printf("\nSoF : %d\n",SoF);
+
+
+
+
+
+printf("\n***********************loopCount= %d************************",loopCount);
+
+
+
+
+
+
+}
+
+fclose(fptr1);
+fclose(fptr2);
+fclose(fptr3);
+fclose(fptr4);
+fclose(fptr5);
+fclose(fptr6);
+fclose(fptr7);
+fclose(fptr8);
+//fclose(fptr9);
+fclose(fptr10);
+fclose(fptr11);
+fclose(fptr12);
+fclose(fptr13);
+fclose(fptr14);
+fclose(fptr15);
+
+}
+
+
+void choldowndate_3D(double L[][3], double x[])
+{
+    int n = 3;
+    double L1[3][3] = {0};
+    double x1[3] = {0};
+    double theta;
+
+    for (int k = 0; k < n; k++)
+    {
+        L1[k][k] = L[k][k];
+        x1[k] = x[k];
+
+        double r1 = pow(L1[k][k],2) - pow(x1[k], 2);
+        if(r1<0)
+            r1 = -r1;
+
+        double r = sqrt(r1);
+
+
+      //  printf("\n\nr=%lf\n\n",r);
+
+        double complex theta1 = catanh(x1[k] / L1[k][k]);
+
+           if((cimag(theta1))!=0)
+        {
+              theta = sqrt(pow(creal(theta1),2) + pow(cimag(theta1), 2));
+        }
+
+        theta = creal(theta1);
+/*
+        printf("\n\n\n\n\n theta = %f", theta);
+
+
+        theta = sqrt(pow(creal(theta1),2) + pow(cimag(theta1), 2));
+        printf("\n\n\n\n\n theta = %f", theta);
+*/
+
+
+
+
+      //  printf("%lf + i%lf\n", creal(theta1), cimag(theta1));
+
+     //   printf("\n\ncreal(theta1) = %lf\n\n",creal(theta1));
+     //   printf("\n\ncimag(theta1) = %lf\n\n",cimag(theta1));
+    //    printf("\n\ntheta = %lf\n\n",theta);
+
+        L1[k][k] = r;
+
+        if (k < n - 1)
+        {
+            for (int i = k + 1; i < n; i++)
+            {
+                L1[i][k] = L[i][k] * cosh(theta) - sinh(theta) * x[i];
+                x1[i] = cosh(theta) * x[i] - sinh(theta) * L[i][k];
+            }
+        }
+
+        for (int i = 0; i < n; i++)
+        {
+            L[i][k] = L1[i][k];
+            x[i] = x1[i];
+        }
+/*
+        printf("\n\n L = \n\n");
+        for(int i=0;i<3;i++){
+          for(int j=0;j<3;j++){
+            printf("%lf ",L[i][j]);
+          }
+          printf("\n");
+        }
+
+        printf("\n\n x = \n\n");
+        for(int i=0;i<3;i++){
+            printf("%lf ",x[i]);
+        }
+*/
+    }
+}
+
+
+//functions
+/*
+void choldowndate_3D(double (*R)[3][3],double (*t)[3][1]){
+
+double L1[3][3]={{0, 0, 0},{0,0,0},{0,0,0}};
+double x1[3][1];
+for(int i=0;i<3;i++){
+    L1[i][i]=(*R)[i][i];
+    printf("\nL1[%d][%d] = %lf",i,i,L1[i][i]);
+    x1[i][0]=(*t)[i][0];
+    printf("\nx1[%d][0] = %lf",i,x1[i][0]);
+    double r = sqrt(abs((L1[i][i] * L1[i][i])- (x1[i][0] * x1[i][0])));
+
+    double complex theta_c = atan(x1[i][0]/L1[i][i]);
+    double theta = sqrt(cimag(theta_c)*cimag(theta_c) + creal(theta_c)*creal(theta_c));
+
+    if(cimag!=0)
+        theta_c = abs(theta_c);
+
+    printf("cimag(theta_c)*cimag(theta_c) + creal(theta_c)*creal(theta_c) = %lf\n\n",cimag(theta_c)*cimag(theta_c) + creal(theta_c)*creal(theta_c));
+    printf("cimag(theta_c) = %lf , creal(theta_c) = %lf",cimag(theta_c),creal(theta_c));
+    printf("theta_c = %lf", theta_c);
+
+
+    L1[i][i] = r;
+    (*R)[i][i] = L1[i][i];
+    printf("\nL1_m[%d][%d] = %lf",i,i,L1[i][i]);
+    printf("\n r%d = %lf",i,r);
+    printf("\n theta%d = %lf",i,theta);
+
+
+    if(i<2){
+            for(int j=0;j<2;j++){
+                L1[j+1][i] = ((*R)[j+1][i]*cosh(theta)-(*t)[j+1][0]*sinh(theta));
+                x1[j+1][0] = (*t)[j+1][0]*cosh(theta)-(*R)[j+1][i]*sinh(theta);
+                //printf("\n L1[%d][%d] = %lf",j+1,i,L1[j][i]);
+            }}
+     for(int j=0;j<3;j++){
+
+               printf("\n L1[%d][%d] = %lf",j,i,L1[j][i]);
+    //(*R)[1][1] = L1[1][1];
+            }
+
+    for(int j=0;j<3;j++){
+                (*R)[j][i] = L1[i][j];
+               printf("\n (*R)[%d][%d] = %lf",j,i,(*R)[j][i]);
+    //(*R)[1][1] = L1[1][1];
+            }
+            printf("\n ================== %d ===================",i );
+          //for(int i=0;i<3;i++){
+            //for(int j=0;j<3;j++){
+                //(*R)[j][i] = L1[i][j];}}
+//
+
+}
+}
+*/
+
+/*
+
+void choldowndate_3D(double (*R)[3][3],double (*t)[3][1]){
+
+double L1[3][3]={{0, 0, 0},{0,0,0},{0,0,0}};
+double x1[3][1];
+for(int i=0;i<3;i++){
+    L1[i][i]=(*R)[i][i];
+    printf("\nL1[%d][%d] = %lf",i,i,L1[i][i]);
+    x1[i][0]=(*t)[i][0];
+    printf("\nx1[%d][0] = %lf",i,x1[i][0]);
+    double r = sqrt(((L1[i][i] * L1[i][i])- (x1[i][0] * x1[i][0])));
+    double complex theta_c = atan(x1[i][0]/L1[i][i]);
+    double theta = sqrt(cimag(theta_c)*cimag(theta_c) + creal(theta_c)*creal(theta_c));
+
+    L1[i][i] = r;
+    (*R)[i][i] = L1[i][i];
+    printf("\nL1_m[%d][%d] = %lf",i,i,L1[i][i]);
+    printf("\n r%d = %lf",i,r);
+    printf("\n theta%d = %lf",i,theta);
+
+
+    if(i<2){
+            for(int j=0;j<2;j++){
+                L1[j+1][i] = ((*R)[j+1][i]*cosh(theta)-(*t)[j+1][0]*sinh(theta));
+                x1[j+1][0] = (*t)[j+1][0]*cosh(theta)-(*R)[j+1][i]*sinh(theta);
+                //printf("\n L1[%d][%d] = %lf",j+1,i,L1[j][i]);
+            }}
+     for(int j=0;j<3;j++){
+
+               printf("\n L1[%d][%d] = %lf",j,i,L1[j][i]);
+    //(*R)[1][1] = L1[1][1];
+            }
+
+    for(int j=0;j<3;j++){
+                (*R)[j][i] = L1[i][j];
+               printf("\n (*R)[%d][%d] = %lf",j,i,(*R)[j][i]);
+    //(*R)[1][1] = L1[1][1];
+            }
+            printf("\n ================== %d ===================",i );
+          //for(int i=0;i<3;i++){
+            //for(int j=0;j<3;j++){
+                //(*R)[j][i] = L1[i][j];}}
+//
+
+}
+}
+
+*/
+//coldowndate_6D
+
+void choldowndate_6D(double L[][6], double x[])
+{
+    int n = 6;
+    double L1[6][6] = {0};
+    double x1[6] = {0};
+    double theta;
+
+    for (int k = 0; k < n; k++)
+    {
+        L1[k][k] = L[k][k];
+        x1[k] = x[k];
+        double r1 = pow(L1[k][k],2) - pow(x1[k], 2);
+        if(r1<0)
+            r1 = -r1;
+
+        double r = sqrt(r1);
+
+
+      //  printf("\n\nr=%lf\n\n",r);
+
+        double complex theta1 = catanh(x1[k] / L1[k][k]);
+
+        if((cimag(theta1))!=0)
+        {
+              theta = sqrt(pow(creal(theta1),2) + pow(cimag(theta1), 2));
+        }
+
+        theta = creal(theta1);
+/*
+        printf("\n\n\n\n\n theta = %f", theta);
+
+
+        theta = sqrt(pow(creal(theta1),2) + pow(cimag(theta1), 2));
+        printf("\n\n\n\n\n theta = %f", theta);
+*/
+
+
+        L1[k][k] = r;
+
+        if (k < n - 1)
+        {
+            for (int i = k + 1; i < n; i++)
+            {
+                L1[i][k] = L[i][k] * cosh(theta) - sinh(theta) * x[i];
+                x1[i] = cosh(theta) * x[i] - sinh(theta) * L[i][k];
+            }
+        }
+
+        for (int i = 0; i < n; i++)
+        {
+            L[i][k] = L1[i][k];
+            x[i] = x1[i];
+        }
+    }
+}
+
+/*
+void choldowndate_6D(double (*R)[6][6],double (*t)[6][1]){
+
+
+double L1[6][6]={{0.0, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000},
+                                    {0.000000, 0.0, 0.000000, 0.000000, 0.000000, 0.000000},
+                              {0.000000, 0.000000, 0.0, 0.000000, 0.000000, 0.000000},
+                              {0.000000, 0.000000, 0.000000, 0.0, 0.000000, 0.000000},
+                              {0.000000, 0.000000, 0.000000, 0.000000, 0.0, 0.000000},
+                              {0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.0}};
+double x1[6][1];
+for(int i=0;i<6;i++){
+    L1[i][i]=(*R)[i][i];
+    printf("\nL1[%d][%d] = %lf",i,i,L1[i][i]);
+    x1[i][0]=(*t)[i][0];
+    printf("\nx1[%d][0] = %lf",i,x1[i][0]);
+double r = sqrt(((L1[i][i] * L1[i][i])- (x1[i][0] * x1[i][0])));
+    double complex theta_c = atan(x1[i][0]/L1[i][i]);
+    double theta = sqrt(cimag(theta_c)*cimag(theta_c) + creal(theta_c)*creal(theta_c));
+     printf("\ntheta_%d=%lf",i,theta);
+    L1[i][i] = r;
+    (*R)[i][i] = L1[i][i];
+    printf("\nL1_m[%d][%d] = %lf",i,i,L1[i][i]);
+    printf("\n r%d = %lf",i,r);
+
+
+
+    if(i<5){
+            for(int j=0;j<5;j++){
+                L1[j+1][i] = (*R)[j+1][i]*cosh(theta)-(*t)[j+1][0]*sinh(theta);
+                x1[j+1][0] = (*t)[j+1][0]*cosh(theta)-(*R)[j+1][i]*sinh(theta);
+                printf("\n L1[%d][%d] = %lf",j+1,i,L1[j][i]);
+            }}
+
+    for(int j=0;j<6;j++){
+                (*R)[j][i] = L1[i][j];
+
+    //(*R)[1][1] = L1[1][1];
+            }
+          //for(int i=0;i<3;i++){
+            //for(int j=0;j<3;j++){
+                //(*R)[j][i] = L1[i][j];}}
+
+
+
+}
+}
+
+*/
+
+//
+double ocvcalculate(double a,double a44,double a33,double a22,double a11, double a00)
+{
+
+    double soc_est=0;
+    return soc_est= (a44*a*a*a*a
+                  + a33*a*a*a
+                 +a22*a*a
+                  + a11*a
+                  +a00);
+}
+
+//State Function
+void state_function( double states_X[3][7],  double parameters_Theta[6][1], double current, double k, double deltaT,int i, double sigma[3][7])
+{
+    double states_X2_tmp;
+    double states_X3_tmp;
+
+    states_X2_tmp = exp(-deltaT / parameters_Theta[2][0]);
+    states_X3_tmp = exp(-deltaT / parameters_Theta[4][0]);
+	sigma[0][i] = states_X[0][i] - k * current;
+	sigma[1][i] = states_X2_tmp * states_X[1][i] + current * parameters_Theta[1][0] * (1.0- states_X2_tmp);
+	sigma[2][i] = states_X3_tmp * states_X[2][i] + current * parameters_Theta[3][0] * (1.0- states_X3_tmp);
+}
+
+
+//Measurement Function
+double measurement_function(double states_X[3][1], double parameters_Theta[6][1], double current,double a3,double a2, double a1,double a0)
+{
+	double voltage;
+	return voltage= a3*(states_X[0][0])*(states_X[0][0])*(states_X[0][0])+a2*(states_X[0][0])*(states_X[0][0])+a1*states_X[0][0]+a0-states_X[1][0]-states_X[2][0]-current*parameters_Theta[0][0];
+
+}
+
+//Measurement Function_theta
+double measurement_function_theta(double states_X[3][1], double parameters_Theta[6][1],double current)
+{
+	double voltage;
+	return voltage= parameters_Theta[5][0]-states_X[1][0]-states_X[2][0]-current*parameters_Theta[0][0];
+
+}
+
+//Exponential Function
+double exp_fn(double in_exp)
+{
+	double x1,e,sum=0.0;
+	int n=0;
+	e=0.00000001;
+	x1=1;
+	do{
+		sum+=x1;
+		x1 *=(in_exp/++n);
+	}
+	while(x1>e || x1<-e );
+	return sum;
+}
+
+
+//Function for Vectoring Mode CORDIC
+//call by reference - https://www.tutorialspoint.com/cprogramming/c_function_call_by_reference.htm
+//no project error solved - https://www.youtube.com/watch?v=WJO-obvMpFY
+void vec(double *x,double *y,double *z,double *w,double *m,double *n,int* ct)
+{
+    double scaling = 0.3061;
+    double a,b,c,d,e,f;
+    a=*x;b=*y;c=*z;d=*w,e=*m,f=*n;
+
+    //printf("w %lf x %lf y %lf z %lf \n ",*w,*x,*y,*z);
+
+
+    int i,sig1,sig2,sig3,sig4,sig5;
+
+    for( i=1;i<17;i++){
+        if((a>0 && b>0) || (a<0 && b<0)) {sig1 = 1;}
+        else {sig1 = -1;}
+        if((a>0 && c>0) || (a<0 && c<0)) {sig2 = 1;}
+        else {sig2 = -1;}
+        if((a>0 && d>0) || (a<0 && d<0)) {sig3 = 1;}
+        else {sig3 = -1;}
+        if((a>0 && e>0) || (a<0 && e<0)) {sig4 = 1;}
+        else {sig4 = -1;}
+        if((a>0 && f>0) || (a<0 && f<0)) {sig5 = 1;}
+        else {sig5 = -1;}
+
+        *x = ((1-(5*pow(2,-2*i)))*a) + 2*(sig1*pow(2,-i)*b) + 2*(sig2*pow(2,-i)*c) + 2*(sig3*pow(2,-i)*d) + 2*(sig4*pow(2,-i)*e)+ 2*(sig5*pow(2,-i)*f);
+        *y = -(2*(sig1*pow(2,-i)*a)) + ((1+3*pow(2,-2*i))*b) - (2*(sig1*sig2*pow(2,-(2*i))*c)) - (2*(sig1*sig3*(pow(2,-(2*i)))*d)) - (2*(sig1*sig4*pow(2,-(2*i))*e))- (2*(sig1*sig5*pow(2,-(2*i))*f));
+        *z = -(2*(sig2*pow(2,-i)*a)) - (2*(sig1*sig2*pow(2,-(2*i))*b)) + ((1+3*pow(2,-(2*i)))*c) - (2*(sig2*sig3*pow(2,-(2*i))*d)) - (2*(sig2*sig4*pow(2,-(2*i))*e))- (2*(sig2*sig5*pow(2,-(2*i))*f)) ;
+        *w = -(2*(sig3*pow(2,-i)*a)) - (2*(sig1*sig3*pow(2,-2*i)*b)) - (2*(sig2*sig3*pow(2,-2*i)*c)) + ((1+3*pow(2,-2*i))*d) - (2*(sig3*sig4*pow(2,-2*i)*e))- (2*(sig3*sig5*pow(2,-2*i)*f)) ;
+        *m = -(2*(sig4*pow(2,-i)*a)) - (2*(sig1*sig4*pow(2,-2*i)*b)) - (2*(sig2*sig4*pow(2,-2*i)*c)) - (2*(sig3*sig4*pow(2,-2*i)*d)) + ((1+3*pow(2,-2*i))*e)- (2*(sig4*sig5*pow(2,-2*i)*f)) ;
+        *n = -(2*(sig5*pow(2,-i)*a)) - (2*(sig1*sig5*pow(2,-2*i)*b)) - (2*(sig2*sig5*pow(2,-2*i)*c)) - (2*(sig3*sig5*pow(2,-2*i)*d)) - (2*(sig4*sig5*pow(2,-2*i)*e))+ ((1+3*pow(2,-2*i))*f) ;
+
+        a=*x;b=*y;c=*z;d=*w,e=*m,f=*n;
+        ct[i-1]= sig1;ct[16+i-1]=sig2;ct[32+i-1]=sig3;ct[48+i-1]=sig4;ct[64+i-1]=sig5;
+        }
+
+        *x=a*scaling;
+        *y=b*scaling;
+        *z=c*scaling;
+        *w=d*scaling;
+        *m=e*scaling;
+        *n=f*scaling;
+        //printf("x %lf y %lf z %lf w %lf \n ",*x,*y,*z,*w);
+
+
+}
+
+//Function for Rotation Mode CORDIC
+// pass string to function - https://www.includehelp.com/c-programs/pass-a-string-to-a-function.aspx
+void rot(double *p,double *q,double *r,double *s,double *u,double *v,int *cr)
+{
+    double scaling = 0.3061;
+    double  a,b,c,d,e,f;
+    a=*p;b=*q;c=*r;d=*s;e=*u;f=*v;
+
+    int i,sig1,sig2,sig3,sig4,sig5;
+
+    for( i=1;i<17;i++){
+        if(cr[i-1]==1)    {sig1 = 1;}
+        else {sig1 = -1;}
+        if(cr[16+i-1]==1) {sig2 = 1;}
+        else {sig2 = -1;}
+        if(cr[32+i-1]==1) {sig3 = 1;}
+        else {sig3 = -1;}
+        if(cr[48+i-1]==1) {sig4 = 1;}
+        else {sig4 = -1;}
+        if(cr[64+i-1]==1) {sig5 = 1;}
+        else {sig5 = -1;}
+
+
+        *p = ((1-(5*pow(2,-2*i)))*a) + 2*(sig1*pow(2,-i)*b) + 2*(sig2*pow(2,-i)*c) + 2*(sig3*pow(2,-i)*d) + 2*(sig4*pow(2,-i)*e)+ 2*(sig5*pow(2,-i)*f);
+        *q = -(2*(sig1*pow(2,-i)*a)) + ((1+3*pow(2,-2*i))*b) - (2*(sig1*sig2*pow(2,-(2*i))*c)) - (2*(sig1*sig3*(pow(2,-(2*i)))*d)) - (2*(sig1*sig4*pow(2,-(2*i))*e))- (2*(sig1*sig5*pow(2,-(2*i))*f));
+        *r = -(2*(sig2*pow(2,-i)*a)) - (2*(sig1*sig2*pow(2,-(2*i))*b)) + ((1+3*pow(2,-(2*i)))*c) - (2*(sig2*sig3*pow(2,-(2*i))*d)) - (2*(sig2*sig4*pow(2,-(2*i))*e))- (2*(sig2*sig5*pow(2,-(2*i))*f)) ;
+        *s = -(2*(sig3*pow(2,-i)*a)) - (2*(sig1*sig3*pow(2,-2*i)*b)) - (2*(sig2*sig3*pow(2,-2*i)*c)) + ((1+3*pow(2,-2*i))*d) - (2*(sig3*sig4*pow(2,-2*i)*e))- (2*(sig3*sig5*pow(2,-2*i)*f)) ;
+        *u = -(2*(sig4*pow(2,-i)*a)) - (2*(sig1*sig4*pow(2,-2*i)*b)) - (2*(sig2*sig4*pow(2,-2*i)*c)) - (2*(sig3*sig4*pow(2,-2*i)*d)) + ((1+3*pow(2,-2*i))*e)- (2*(sig4*sig5*pow(2,-2*i)*f)) ;
+        *v = -(2*(sig5*pow(2,-i)*a)) - (2*(sig1*sig5*pow(2,-2*i)*b)) - (2*(sig2*sig5*pow(2,-2*i)*c)) - (2*(sig3*sig5*pow(2,-2*i)*d)) - (2*(sig4*sig5*pow(2,-2*i)*e))+ ((1+3*pow(2,-2*i))*f) ;
+
+        a=*p;
+        b=*q;
+        c=*r;
+        d=*s;
+        e=*u;
+        f=*v;
+        }
+
+        *p=a*scaling;
+        *q=b*scaling;
+        *r=c*scaling;
+        *s=d*scaling;
+        *u=e*scaling;
+        *v=f*scaling;
+
+
+}
+
+//Function for 6D QRD using householder CORDIC
+void QRD_6D(double A[6][6]){
+    int c_1[80],c_2[80],c_3[80],c_4[80],c_5[80];
+    int c1[80],c2[80],c3[80],c4[80],c5[80];
+    double z =0;
+    int i;
+
+    vec(&A[0][0],&A[1][0],&A[2][0],&A[3][0],&A[4][0],&A[5][0],c_1);
+    for( i=0; i<80; i++) {c1[i] = c_1[i];}
+    rot(&A[0][1],&A[1][1],&A[2][1],&A[3][1],&A[4][1],&A[5][1],c1);
+    rot(&A[0][2],&A[1][2],&A[2][2],&A[3][2],&A[4][2],&A[5][2],c1);
+    rot(&A[0][3],&A[1][3],&A[2][3],&A[3][3],&A[4][3],&A[5][3],c1);
+    rot(&A[0][4],&A[1][4],&A[2][4],&A[3][4],&A[4][4],&A[5][4],c1);
+    rot(&A[0][5],&A[1][5],&A[2][5],&A[3][5],&A[4][5],&A[5][5],c1);
+
+    vec(&A[1][1],&A[2][1],&A[3][1],&A[4][1],&A[5][1],&z,c_2);
+    for( i=0; i<80; i++) {c2[i] = c_2[i];}
+    rot(&A[1][2],&A[2][2],&A[3][2],&A[4][2],&A[5][2],&z,c2);
+    rot(&A[1][3],&A[2][3],&A[3][3],&A[4][3],&A[5][3],&z,c2);
+    rot(&A[1][4],&A[2][4],&A[3][4],&A[4][4],&A[5][4],&z,c2);
+    rot(&A[1][5],&A[2][5],&A[3][5],&A[4][5],&A[5][5],&z,c2);
+
+    vec(&A[2][2],&A[3][2],&A[4][2],&A[5][2],&z,&z,c_3);
+    for( i=0; i<80; i++) {c3[i] = c_3[i];}
+    rot(&A[2][3],&A[3][3],&A[4][3],&A[5][3],&z,&z,c3);
+    rot(&A[2][4],&A[3][4],&A[4][4],&A[5][4],&z,&z,c3);
+    rot(&A[2][5],&A[3][5],&A[4][5],&A[5][5],&z,&z,c3);
+
+    vec(&A[3][3],&A[4][3],&A[5][3],&z,&z,&z,c_4);
+    for( i=0; i<80; i++) {c4[i] = c_4[i];}
+    rot(&A[3][4],&A[4][4],&A[5][4],&z,&z,&z,c4);
+    rot(&A[3][5],&A[4][5],&A[5][5],&z,&z,&z,c4);
+
+    vec(&A[4][4],&A[5][4],&z,&z,&z,&z,c_5);
+    for( i=0; i<80; i++) {c5[i] = c_5[i];}
+    rot(&A[4][5],&A[5][5],&z,&z,&z,&z,c5);
+
+}
+
+void vec_12D(double *x, double *y, double *z, double *w, double *m, double *n, double *o, double *p, double *q, double *r, double *s, double *t)
+{
+    double scaling = 0.1275;
+    double a = *x;
+    double b = *y;
+    double c = *z;
+    double d = *w;
+    double e = *m;
+    double f = *n;
+    double g = *o;
+    double h = *p;
+    double u = *q;
+    double v = *r;
+    double wo = *s;
+    double w1 = *t;
+
+    int i;
+    for (i = 1; i <= 16; i++)
+    {
+        int sig1 = (a >= 0 && b >= 0) || (a < 0 && b < 0) ? 1 : -1;
+        int sig2 = (a >= 0 && c >= 0) || (a < 0 && c < 0) ? 1 : -1;
+        int sig3 = (a >= 0 && d >= 0) || (a < 0 && d < 0) ? 1 : -1;
+        int sig4 = (a >= 0 && e >= 0) || (a < 0 && e < 0) ? 1 : -1;
+        int sig5 = (a >= 0 && f >= 0) || (a < 0 && f < 0) ? 1 : -1;
+        int sig6 = (a >= 0 && g >= 0) || (a < 0 && g < 0) ? 1 : -1;
+        int sig7 = (a >= 0 && h >= 0) || (a < 0 && h < 0) ? 1 : -1;
+        int sig8 = (a >= 0 && u >= 0) || (a < 0 && u < 0) ? 1 : -1;
+        int sig9 = (a >= 0 && v >= 0) || (a < 0 && v < 0) ? 1 : -1;
+        int sig10 = (a >= 0 && wo >= 0) || (a < 0 && wo < 0) ? 1 : -1;
+        int sig11 = (a >= 0 && w1 >= 0) || (a < 0 && w1 < 0) ? 1 : -1;
+
+        double xx1 = ((1 - (11 * pow(2, -2 * i))) * a);
+        double xx2 = (sig1 * pow(2, 1 - i) * b);
+        double xx3 = (sig2 * pow(2, 1 - i) * c);
+        double xx4 = (sig3 * pow(2, 1 - i) * d);
+        double xx5 = (sig4 * pow(2, 1 - i) * e);
+        double xx6 = (sig5 * pow(2, 1 - i) * f);
+        double xx7 = (sig6 * pow(2, 1 - i) * g);
+        double xx8 = (sig7 * pow(2, 1 - i) * h);
+        double xx9 = (sig8 * pow(2, 1 - i) * u);
+        double xx10 = (sig9 * pow(2, 1 - i) * v);
+        double xx11 = (sig10 * pow(2, 1 - i) * wo);
+        double xx12 = (sig11 * pow(2, 1 - i) * w1);
+
+        *x = xx1 + xx2 + xx3 + xx4 + xx5 + xx6 + xx7 + xx8 + xx9 + xx10 + xx11 + xx12;
+
+        double yy1 = -(sig1 * pow(2, 1 - i) * a);
+        double yy2 = ((1 + (9 * pow(2, -2 * i))) * b);
+        double yy3 = -(sig1 * sig2 * pow(2, 1 - 2*i) * c);
+        double yy4 = -(sig1 * sig3 * pow(2, 1 - 2*i) * d);
+        double yy5 = -(sig1 * sig4 * pow(2, 1 - 2*i) * e);
+        double yy6 = -(sig1 * sig5 * pow(2, 1 - 2*i) * f);
+        double yy7 = -(sig1 * sig6 * pow(2, 1 - 2*i) * g);
+        double yy8 = -(sig1 * sig7 * pow(2, 1 - 2*i) * h);
+        double yy9 = -(sig1 * sig8 * pow(2, 1 - 2*i) * u);
+        double yy10 = -(sig1 * sig9 * pow(2, 1 - 2*i) * v);
+        double yy11 = -(sig1 * sig10 * pow(2, 1 - 2*i) * wo);
+        double yy12 = -(sig1 * sig11 * pow(2, 1 - 2*i) * w1);
+
+        *y = yy1 + yy2 + yy3 + yy4 + yy5 + yy6 + yy7 + yy8 + yy9 + yy10 + yy11 + yy12;
+
+        double zz1 = -(sig2 * pow(2, 1 - i) * a);
+        double zz2 = -(sig1 * sig2 * pow(2, 1 - 2*i) * b);
+        double zz3 = ((1 + (9 * pow(2, -2 * i))) * c);
+        double zz4 = -(sig2 * sig3 * pow(2, 1 - 2*i) * d);
+        double zz5 = -(sig2 * sig4 * pow(2, 1 - 2*i) * e);
+        double zz6 = -(sig2 * sig5 * pow(2, 1 - 2*i) * f);
+        double zz7 = -(sig2 * sig6 * pow(2, 1 - 2*i) * g);
+        double zz8 = -(sig2 * sig7 * pow(2, 1 - 2*i) * h);
+        double zz9 = -(sig2 * sig8 * pow(2, 1 - 2*i) * u);
+        double zz10= -(sig2 * sig9 * pow(2, 1 - 2*i) * v);
+        double zz11 = -(sig2 * sig10 * pow(2, 1 - 2*i) * wo);
+        double zz12 = -(sig2 * sig11 * pow(2, 1 - 2*i) * w1);
+
+
+        *z = zz1 + zz2 + zz3 + zz4 + zz5 + zz6 + zz7 + zz8 + zz9 + zz10 + zz11 + zz12;
+
+
+        double ww1 = -(sig3 * pow(2, 1 - i) * a);
+        double ww2 = -(sig1 * sig3 * pow(2, 1 - 2*i) * b);
+        double ww3 = -(sig2 * sig3 * pow(2, 1 - 2*i) * c);
+        double ww4 = ((1 + (9 * pow(2, -2 * i))) * d);
+        double ww5 = -(sig3 * sig4 * pow(2, 1 - 2*i) * e);
+        double ww6 = -(sig3 * sig5 * pow(2, 1 - 2*i) * f);
+        double ww7 = -(sig3 * sig6 * pow(2, 1 - 2*i) * g);
+        double ww8 = -(sig3 * sig7 * pow(2, 1 - 2*i) * h);
+        double ww9 = -(sig3 * sig8 * pow(2, 1 - 2*i) * u);
+        double ww10= -(sig3 * sig9 * pow(2, 1 - 2*i) * v);
+        double ww11 = -(sig3 * sig10 * pow(2, 1 - 2*i) * wo);
+        double ww12 = -(sig3 * sig11 * pow(2, 1 - 2*i) * w1);
+
+
+        *w = ww1 + ww2 + ww3 + ww4 + ww5 + ww6 + ww7 + ww8 + ww9 + ww10 + ww11 + ww12;
+
+
+        double mm1 = -(sig4 * pow(2, 1 - i) * a);
+        double mm2 = -(sig1 * sig4 * pow(2, 1 - 2*i) * b);
+        double mm3 = -(sig2 * sig4 * pow(2, 1 - 2*i) * c);
+        double mm4 = -(sig3 * sig4 * pow(2, 1 - 2*i) * d);
+        double mm5 = ((1 + (9 * pow(2, -2 * i))) * e);
+        double mm6 = -(sig4 * sig5 * pow(2, 1 - 2*i) * f);
+        double mm7 = -(sig4 * sig6 * pow(2, 1 - 2*i) * g);
+        double mm8 = -(sig4 * sig7 * pow(2, 1 - 2*i) * h);
+        double mm9 = -(sig4 * sig8 * pow(2, 1 - 2*i) * u);
+        double mm10= -(sig4 * sig9 * pow(2, 1 - 2*i) * v);
+        double mm11 = -(sig4 * sig10 * pow(2, 1 - 2*i) * wo);
+        double mm12 = -(sig4 * sig11 * pow(2, 1 - 2*i) * w1);
+
+
+        *m = mm1 + mm2 + mm3 + mm4 + mm5 + mm6 + mm7 + mm8 + mm9 + mm10 + mm11 + mm12;
+
+
+
+        double nn1 = -(sig5 * pow(2, 1 - i) * a);
+        double nn2 = -(sig1 * sig5 * pow(2, 1 - 2*i) * b);
+        double nn3 = -(sig2 * sig5 * pow(2, 1 - 2*i) * c);
+        double nn4 = -(sig3 * sig5 * pow(2, 1 - 2*i) * d);
+        double nn5 = -(sig4 * sig5 * pow(2, 1 - 2*i) * e);
+        double nn6 = ((1 + (9 * pow(2, -2 * i))) * f);
+        double nn7 = -(sig5 * sig6 * pow(2, 1 - 2*i) * g);
+        double nn8 = -(sig5 * sig7 * pow(2, 1 - 2*i) * h);
+        double nn9 = -(sig5 * sig8 * pow(2, 1 - 2*i) * u);
+        double nn10= -(sig5 * sig9 * pow(2, 1 - 2*i) * v);
+        double nn11 = -(sig5 * sig10 * pow(2, 1 - 2*i) * wo);
+        double nn12 = -(sig5 * sig11 * pow(2, 1 - 2*i) * w1);
+
+
+        *n = nn1 + nn2 + nn3 + nn4 + nn5 + nn6 + nn7 + nn8 + nn9 + nn10 + nn11 + nn12;
+
+
+        double oo1 = -(sig6 * pow(2, 1 - i) * a);
+        double oo2 = -(sig1 * sig6 * pow(2, 1 - 2*i) * b);
+        double oo3 = -(sig2 * sig6 * pow(2, 1 - 2*i) * c);
+        double oo4 = -(sig3 * sig6 * pow(2, 1 - 2*i) * d);
+        double oo5 = -(sig4 * sig6 * pow(2, 1 - 2*i) * e);
+        double oo6 = -(sig5 * sig6 * pow(2, 1 - 2*i) * f);
+        double oo7 = ((1 + (9 * pow(2, -2 * i))) * g);
+        double oo8 = -(sig6 * sig7 * pow(2, 1 - 2*i) * h);
+        double oo9 = -(sig6 * sig8 * pow(2, 1 - 2*i) * u);
+        double oo10= -(sig6 * sig9 * pow(2, 1 - 2*i) * v);
+        double oo11 = -(sig6 * sig10 * pow(2, 1 - 2*i) * wo);
+        double oo12 = -(sig6 * sig11 * pow(2, 1 - 2*i) * w1);
+
+
+        *o = oo1 + oo2 + oo3 + oo4 + oo5 + oo6 + oo7 + oo8 + oo9 + oo10 + oo11 + oo12;
+
+
+        double pp1 = -(sig7 * pow(2, 1 - i) * a);
+        double pp2 = -(sig1 * sig7 * pow(2, 1 - 2*i) * b);
+        double pp3 = -(sig2 * sig7 * pow(2, 1 - 2*i) * c);
+        double pp4 = -(sig3 * sig7 * pow(2, 1 - 2*i) * d);
+        double pp5 = -(sig4 * sig7 * pow(2, 1 - 2*i) * e);
+        double pp6 = -(sig5 * sig7 * pow(2, 1 - 2*i) * f);
+        double pp7 = -(sig6 * sig7 * pow(2, 1 - 2*i) * g);
+        double pp8 = ((1 + (9 * pow(2, -2 * i))) * h);
+        double pp9 = -(sig7 * sig8 * pow(2, 1 - 2*i) * u);
+        double pp10= -(sig7 * sig9 * pow(2, 1 - 2*i) * v);
+        double pp11 = -(sig7 * sig10 * pow(2, 1 - 2*i) * wo);
+        double pp12 = -(sig7 * sig11 * pow(2, 1 - 2*i) * w1);
+
+
+        *p = pp1 + pp2 + pp3 + pp4 + pp5 + pp6 + pp7 + pp8 + pp9 + pp10 + pp11 + pp12;
+
+
+
+        double qq1 = -(sig8 * pow(2, 1 - i) * a);
+        double qq2 = -(sig1 * sig8 * pow(2, 1 - 2*i) * b);
+        double qq3 = -(sig2 * sig8 * pow(2, 1 - 2*i) * c);
+        double qq4 = -(sig3 * sig8 * pow(2, 1 - 2*i) * d);
+        double qq5 = -(sig4 * sig8 * pow(2, 1 - 2*i) * e);
+        double qq6 = -(sig5 * sig8 * pow(2, 1 - 2*i) * f);
+        double qq7 = -(sig6 * sig8 * pow(2, 1 - 2*i) * g);
+        double qq8 = -(sig7 * sig8 * pow(2, 1 - 2*i) * h);
+        double qq9 = ((1 + (9 * pow(2, -2 * i))) * u);
+        double qq10= -(sig8 * sig9 * pow(2, 1 - 2*i) * v);
+        double qq11 = -(sig8 * sig10 * pow(2, 1 - 2*i) * wo);
+        double qq12 = -(sig8 * sig11 * pow(2, 1 - 2*i) * w1);
+
+
+        *q = qq1 + qq2 + qq3 + qq4 + qq5 + qq6 + qq7 + qq8 + qq9 + qq10 + qq11 + qq12;
+
+
+        double rr1 = -(sig9 * pow(2, 1 - i) * a);
+        double rr2 = -(sig1 * sig9 * pow(2, 1 - 2*i) * b);
+        double rr3 = -(sig2 * sig9 * pow(2, 1 - 2*i) * c);
+        double rr4 = -(sig3 * sig9 * pow(2, 1 - 2*i) * d);
+        double rr5 = -(sig4 * sig9 * pow(2, 1 - 2*i) * e);
+        double rr6 = -(sig5 * sig9 * pow(2, 1 - 2*i) * f);
+        double rr7 = -(sig6 * sig9 * pow(2, 1 - 2*i) * g);
+        double rr8 = -(sig7 * sig9 * pow(2, 1 - 2*i) * h);
+        double rr9 = -(sig8 * sig9 * pow(2, 1 - 2*i) * u);
+        double rr10= ((1 + (9 * pow(2, -2 * i))) * v);
+        double rr11 = -(sig9 * sig10 * pow(2, 1 - 2*i) * wo);
+        double rr12 = -(sig9 * sig11 * pow(2, 1 - 2*i) * w1);
+
+
+        *r = rr1 + rr2 + rr3 + rr4 + rr5 + rr6 + rr7 + rr8 + rr9 + rr10 + rr11 + rr12;
+
+
+        double ss1 = -(sig10 * pow(2, 1 - i) * a);
+        double ss2 = -(sig1 * sig10 * pow(2, 1 - 2*i) * b);
+        double ss3 = -(sig2 * sig10 * pow(2, 1 - 2*i) * c);
+        double ss4 = -(sig3 * sig10 * pow(2, 1 - 2*i) * d);
+        double ss5 = -(sig4 * sig10 * pow(2, 1 - 2*i) * e);
+        double ss6 = -(sig5 * sig10 * pow(2, 1 - 2*i) * f);
+        double ss7 = -(sig6 * sig10 * pow(2, 1 - 2*i) * g);
+        double ss8 = -(sig7 * sig10 * pow(2, 1 - 2*i) * h);
+        double ss9 = -(sig8 * sig10 * pow(2, 1 - 2*i) * u);
+        double ss10= -(sig9 * sig10 * pow(2, 1 - 2*i) * v);
+        double ss11 = ((1 + (9 * pow(2, -2 * i))) * wo);
+        double ss12 = -(sig10 * sig11 * pow(2, 1 - 2*i) * w1);
+
+
+        *s = ss1 + ss2 + ss3 + ss4 + ss5 + ss6 + ss7 + ss8 + ss9 + ss10 + ss11 + ss12;
+
+
+        double tt1 = -(sig11 * pow(2, 1 - i) * a);
+        double tt2 = -(sig1 * sig11 * pow(2, 1 - 2*i) * b);
+        double tt3 = -(sig2 * sig11 * pow(2, 1 - 2*i) * c);
+        double tt4 = -(sig3 * sig11 * pow(2, 1 - 2*i) * d);
+        double tt5 = -(sig4 * sig11 * pow(2, 1 - 2*i) * e);
+        double tt6 = -(sig5 * sig11 * pow(2, 1 - 2*i) * f);
+        double tt7 = -(sig6 * sig11 * pow(2, 1 - 2*i) * g);
+        double tt8 = -(sig7 * sig11 * pow(2, 1 - 2*i) * h);
+        double tt9 = -(sig8 * sig11 * pow(2, 1 - 2*i) * u);
+        double tt10= -(sig9 * sig11 * pow(2, 1 - 2*i) * v);
+        double tt11 = -(sig10 * sig11 * pow(2, 1 - 2*i) * wo);
+        double tt12 = ((1 + (9 * pow(2, -2 * i))) * w1);
+
+
+        *t = tt1 + tt2 + tt3 + tt4 + tt5 + tt6 + tt7 + tt8 + tt9 + tt10 + tt11 + tt12;
+
+ a=*x;
+ b=*y;
+ c=*z;
+ d=*w;
+ e=*m;
+ f=*n;
+ g=*o;
+ h=*p;
+ u=*q;
+ v=*r;
+ wo=*s;
+ w1=*t;
+
+
+}
+
+ *x=a*scaling;
+ *y=b*scaling;
+ *z=c*scaling;
+ *w=d*scaling;
+ *m=e*scaling;
+ *n=f*scaling;
+ *o=g*scaling;
+ *p=h*scaling;
+ *q=u*scaling;
+ *r=v*scaling;
+ *s=wo*scaling;
+ *t=w1*scaling;
+
+ //   return x;
+}
+
+
+
+/*
+void vec_12D(double *x,double *y,double *z,double *w,double *m,double *n,double *o,double *p,double *q,double *r,double *s,double *t,int* ct)
+{
+    double scaling = 0.1275;
+    double a,b,c,d,e,f,g,h,j,k,u,v;
+    a=*x;b=*y;c=*z;d=*w,e=*m,f=*n,g=*o,h=*p,j=*q,k=*r,u=*s,v=*t;
+
+    //printf("w %lf x %lf y %lf z %lf \n ",*w,*x,*y,*z);
+
+
+    int sig1,sig2,sig3,sig4,sig5,sig6,sig7,sig8,sig9,sig10,sig11;
+
+    for(int i=1;i<17;i++){
+        if((a>=0 && b>=0) || (a<0 && b<0)) {sig1 = 1;}
+        else {sig1 = -1;}
+        if((a>=0 && c>=0) || (a<0 && c<0)) {sig2 = 1;}
+        else {sig2 = -1;}
+        if((a>=0 && d>=0) || (a<0 && d<0)) {sig3 = 1;}
+        else {sig3 = -1;}
+        if((a>=0 && e>=0) || (a<0 && e<0)) {sig4 = 1;}
+        else {sig4 = -1;}
+        if((a>=0 && f>=0) || (a<0 && f<0)) {sig5 = 1;}
+        else {sig5 = -1;}
+        if((a>=0 && g>=0) || (a<0 && g<0)) {sig6 = 1;}
+        else {sig6= -1;}
+        if((a>=0 && h>=0) || (a<0 && h<0)) {sig7 = 1;}
+        else {sig7 = -1;}
+        if((a>=0 && j>=0) || (a<0 && j<0)) {sig8 = 1;}
+        else {sig8 = -1;}
+        if((a>=0 && k>=0) || (a<0 && k<0)) {sig9 = 1;}
+        else {sig9 = -1;}
+        if((a>=0 && u>=0) || (a<0 && u<0)) {sig10 = 1;}
+        else {sig10 = -1;}
+        if((a>=0 && v>=0) || (a<0 && v<0)) {sig11 = 1;}
+        else {sig11 = -1;}
+
+        *x = ((1-(11*pow(2,-2*i)))*a) + 2*(sig1*pow(2,-i)*b) + 2*(sig2*pow(2,-i)*c) + 2*(sig3*pow(2,-i)*d) + 2*(sig4*pow(2,-i)*e)+ 2*(sig5*pow(2,-i)*f)+ 2*(sig6*pow(2,-i)*g)+ 2*(sig7*pow(2,-i)*h)+ 2*(sig8*pow(2,-i)*j)+ 2*(sig9*pow(2,-i)*k) + 2*(sig10*pow(2,-i)*u) + 2*(sig11*pow(2,-i)*v);
+        *y = -(2*(sig1*pow(2,-i)*a)) + ((1+9*pow(2,-2*i))*b) - (2*(sig1*sig2*pow(2,-2*i)*c)) - (2*(sig1*sig3*(pow(2,-2*i))*d)) - (2*(sig1*sig4*pow(2,-2*i)*e))- (2*(sig1*sig5*pow(2,-2*i)*f))- (2*(sig1*sig6*pow(2,-2*i)*g))- (2*(sig1*sig7*pow(2,-2*i)*h))- (2*(sig1*sig8*pow(2,-2*i)*j))-(2*(sig1*sig9*pow(2,-2*i)*k))- (2*(sig1*sig10*pow(2,-2*i)*u))- (2*(sig1*sig11*pow(2,-2*i)*v));
+        *z = -(2*(sig2*pow(2,-i)*a)) - (2*(sig1*sig2*pow(2,-2*i)*b)) + ((1+9*pow(2,-2*i))*c) - (2*(sig2*sig3*pow(2,-2*i)*d)) - (2*(sig2*sig4*pow(2,-2*i)*e))- (2*(sig2*sig5*pow(2,-2*i)*f))- (2*(sig2*sig6*pow(2,-2*i)*g))- (2*(sig2*sig7*pow(2,-2*i)*h))- (2*(sig2*sig8*pow(2,-2*i)*j))- (2*(sig2*sig9*pow(2,-2*i)*k)) - (2*(sig2*sig10*pow(2,-2*i)*u))- (2*(sig2*sig11*pow(2,-2*i)*v));
+        *w = -(2*(sig3*pow(2,-i)*a)) - (2*(sig1*sig3*pow(2,-2*i)*b)) - (2*(sig2*sig3*pow(2,-2*i)*c)) + ((1+9*pow(2,-2*i))*d) - (2*(sig3*sig4*pow(2,-2*i)*e))- (2*(sig3*sig5*pow(2,-2*i)*f))- (2*(sig3*sig6*pow(2,-2*i)*g))- (2*(sig3*sig7*pow(2,-2*i)*h))- (2*(sig3*sig8*pow(2,-2*i)*j))- (2*(sig3*sig9*pow(2,-2*i)*k)) - (2*(sig3*sig10*pow(2,-2*i)*u))- (2*(sig3*sig11*pow(2,-2*i)*v));
+        *m = -(2*(sig4*pow(2,-i)*a)) - (2*(sig1*sig4*pow(2,-2*i)*b)) - (2*(sig2*sig4*pow(2,-2*i)*c)) - (2*(sig3*sig4*pow(2,-2*i)*d)) + ((1+9*pow(2,-2*i))*e)- (2*(sig4*sig5*pow(2,-2*i)*f))- (2*(sig4*sig6*pow(2,-2*i)*g))- (2*(sig4*sig7*pow(2,-2*i)*h))- (2*(sig4*sig8*pow(2,-2*i)*j))- (2*(sig4*sig9*pow(2,-2*i)*k)) - (2*(sig4*sig10*pow(2,-2*i)*u))- (2*(sig4*sig11*pow(2,-2*i)*v));
+        *n = -(2*(sig5*pow(2,-i)*a)) - (2*(sig1*sig5*pow(2,-2*i)*b)) - (2*(sig2*sig5*pow(2,-2*i)*c)) - (2*(sig3*sig5*pow(2,-2*i)*d)) - (2*(sig4*sig5*pow(2,-2*i)*e))+ ((1+9*pow(2,-2*i))*f)- (2*(sig5*sig6*pow(2,-2*i)*g))- (2*(sig5*sig7*pow(2,-2*i)*h))- (2*(sig5*sig8*pow(2,-2*i)*j))- (2*(sig5*sig9*pow(2,-2*i)*k)) - (2*(sig5*sig10*pow(2,-2*i)*u))- (2*(sig5*sig11*pow(2,-2*i)*v));
+        *o = -(2*(sig6*pow(2,-i)*a)) - (2*(sig1*sig6*pow(2,-2*i)*b)) - (2*(sig2*sig6*pow(2,-2*i)*c)) - (2*(sig3*sig6*pow(2,-2*i)*d)) - (2*(sig4*sig6*pow(2,-2*i)*e))- (2*(sig5*sig6*pow(2,-2*i)*f))+ ((1+9*pow(2,-2*i))*g)- (2*(sig6*sig7*pow(2,-2*i)*h))- (2*(sig6*sig8*pow(2,-2*i)*j))- (2*(sig6*sig9*pow(2,-2*i)*k)) - (2*(sig6*sig10*pow(2,-2*i)*u))- (2*(sig6*sig11*pow(2,-2*i)*v));
+        *p = -(2*(sig7*pow(2,-i)*a)) - (2*(sig1*sig7*pow(2,-2*i)*b)) - (2*(sig2*sig7*pow(2,-2*i)*c)) - (2*(sig3*sig7*pow(2,-2*i)*d)) - (2*(sig4*sig7*pow(2,-2*i)*e))- (2*(sig5*sig7*pow(2,-2*i)*f))- (2*(sig7*sig6*pow(2,-2*i)*g))+ ((1+9*pow(2,-2*i))*h)- (2*(sig7*sig8*pow(2,-2*i)*j))- (2*(sig7*sig9*pow(2,-2*i)*k)) - (2*(sig7*sig10*pow(2,-2*i)*u))- (2*(sig7*sig11*pow(2,-2*i)*v));
+        *r = -(2*(sig8*pow(2,-i)*a)) - (2*(sig1*sig8*pow(2,-2*i)*b)) - (2*(sig2*sig8*pow(2,-2*i)*c)) - (2*(sig3*sig8*pow(2,-2*i)*d)) - (2*(sig4*sig8*pow(2,-2*i)*e))- (2*(sig5*sig8*pow(2,-2*i)*f))- (2*(sig8*sig6*pow(2,-2*i)*g))- (2*(sig8*sig7*pow(2,-2*i)*h))+ ((1+9*pow(2,-2*i))*j)- (2*(sig8*sig9*pow(2,-2*i)*k)) - (2*(sig8*sig10*pow(2,-2*i)*u))- (2*(sig8*sig11*pow(2,-2*i)*v));
+        *r = -(2*(sig9*pow(2,-i)*a)) - (2*(sig1*sig9*pow(2,-2*i)*b)) - (2*(sig2*sig9*pow(2,-2*i)*c)) - (2*(sig3*sig9*pow(2,-2*i)*d)) - (2*(sig4*sig9*pow(2,-2*i)*e))- (2*(sig5*sig9*pow(2,-2*i)*f))- (2*(sig9*sig6*pow(2,-2*i)*g))- (2*(sig9*sig7*pow(2,-2*i)*h))- (2*(sig9*sig8*pow(2,-2*i)*j))+ ((1+9*pow(2,-2*i))*k) - (2*(sig9*sig10*pow(2,-2*i)*u))- (2*(sig9*sig11*pow(2,-2*i)*v));
+        *s = -(2*(sig10*pow(2,-i)*a)) - (2*(sig1*sig10*pow(2,-2*i)*b)) - (2*(sig2*sig10*pow(2,-2*i)*c)) - (2*(sig3*sig10*pow(2,-2*i)*d)) - (2*(sig4*sig10*pow(2,-2*i)*e))- (2*(sig5*sig10*pow(2,-2*i)*f))- (2*(sig10*sig6*pow(2,-2*i)*g))- (2*(sig10*sig7*pow(2,-2*i)*h))- (2*(sig10*sig8*pow(2,-2*i)*j))- (2*(sig10*sig9*pow(2,-2*i)*k))+ ((1+9*pow(2,-2*i))*u) - (2*(sig10*sig11*pow(2,-2*i)*v));
+        *t = -(2*(sig11*pow(2,-i)*a)) - (2*(sig1*sig11*pow(2,-2*i)*b)) - (2*(sig2*sig11*pow(2,-2*i)*c)) - (2*(sig3*sig11*pow(2,-2*i)*d)) - (2*(sig4*sig11*pow(2,-2*i)*e))- (2*(sig5*sig11*pow(2,-2*i)*f))- (2*(sig11*sig6*pow(2,-2*i)*g))- (2*(sig11*sig7*pow(2,-2*i)*h))- (2*(sig11*sig8*pow(2,-2*i)*j))- (2*(sig11*sig9*pow(2,-2*i)*k))- (2*(sig11*sig10*pow(2,-2*i)*u))+ ((1+9*pow(2,-2*i))*v);
+
+        a=*x;b=*y;c=*z;d=*w,e=*m,f=*n,g=*o,h=*p,j=*q,k=*r,u=*s,v=*t;
+        ct[i-1]= sig1;ct[16+i-1]=sig2;ct[32+i-1]=sig3;ct[48+i-1]=sig4;ct[64+i-1]=sig5;ct[80+i-1]=sig6;ct[96+i-1]=sig7;ct[112+i-1]=sig8;ct[128+i-1]=sig9;ct[144+i-1]=sig10;ct[160+i-1]=sig11;
+        }
+
+        *x=a*scaling;
+        *y=b*scaling;
+        *z=c*scaling;
+        *w=d*scaling;
+        *m=e*scaling;
+        *n=f*scaling;
+        *o=g*scaling;
+        *p=h*scaling;
+        *q=j*scaling;
+        *r=k*scaling;
+        *s=u*scaling;
+        *t=v*scaling;
+        //printf("x %lf y %lf z %lf w %lf \n ",*x,*y,*z,*w);
+
+
+}
+
+// pass string to function - https://www.includehelp.com/c-programs/pass-a-string-to-a-function.aspx
+void rot_12D(double *p,double *q,double *r,double *s,double *u,double *v,double *w,double *x,double *y,double *z,double *n,double *o,int *cr)
+{
+    double scaling = 0.1275;
+    double a,b,c,d,e,f,g,h,j,k,l,m;
+    a=*p;b=*q;c=*r;d=*s;e=*u;f=*v;g=*w;h=*x;j=*y;k=*z;l=*n;m=*o;
+
+    int sig1,sig2,sig3,sig4,sig5,sig6,sig7,sig8,sig9,sig10,sig11;
+
+
+    for(int i=1;i<17;i++){
+        if(cr[i-1]==1) {sig1 = 1;}
+        else {sig1 = -1;}
+        if(cr[16+i-1]==1) {sig2 = 1;}
+        else {sig2 = -1;}
+        if(cr[32+i-1]==1) {sig3 = 1;}
+        else {sig3 = -1;}
+        if(cr[48+i-1]==1) {sig4 = 1;}
+        else {sig4 = -1;}
+        if(cr[64+i-1]==1) {sig5 = 1;}
+        else {sig5 = -1;}
+        if(cr[80+i-1]==1) {sig6 = 1;}
+        else {sig6 = -1;}
+        if(cr[96+i-1]==1) {sig7 = 1;}
+        else {sig7 = -1;}
+        if(cr[112+i-1]==1) {sig8 = 1;}
+        else {sig8 = -1;}
+        if(cr[128+i-1]==1) {sig9 = 1;}
+        else {sig9 = -1;}
+        if(cr[144+i-1]==1) {sig10 = 1;}
+        else {sig10 = -1;}
+        if(cr[160+i-1]==1) {sig11 = 1;}
+        else {sig11 = -1;}
+
+
+        *p = ((1-(11*pow(2,-2*i)))*a) + 2*(sig1*pow(2,-i)*b) + 2*(sig2*pow(2,-i)*c) + 2*(sig3*pow(2,-i)*d) + 2*(sig4*pow(2,-i)*e)+ 2*(sig5*pow(2,-i)*f)+ 2*(sig6*pow(2,-i)*g)+ 2*(sig7*pow(2,-i)*h)+ 2*(sig8*pow(2,-i)*j)+ 2*(sig9*pow(2,-i)*k) + 2*(sig10*pow(2,-i)*l) + 2*(sig11*pow(2,-i)*m);
+        *q = -(2*(sig1*pow(2,-i)*a)) + ((1+9*pow(2,-2*i))*b) - (2*(sig1*sig2*pow(2,-2*i)*c)) - (2*(sig1*sig3*(pow(2,-2*i))*d)) - (2*(sig1*sig4*pow(2,-2*i)*e))- (2*(sig1*sig5*pow(2,-2*i)*f))- (2*(sig1*sig6*pow(2,-2*i)*g))- (2*(sig1*sig7*pow(2,-2*i)*h))- (2*(sig1*sig8*pow(2,-2*i)*j))-(2*(sig1*sig9*pow(2,-2*i)*k))- (2*(sig1*sig10*pow(2,-2*i)*l))- (2*(sig1*sig11*pow(2,-2*i)*m));
+        *r = -(2*(sig2*pow(2,-i)*a)) - (2*(sig1*sig2*pow(2,-2*i)*b)) + ((1+9*pow(2,-2*i))*c) - (2*(sig2*sig3*pow(2,-2*i)*d)) - (2*(sig2*sig4*pow(2,-2*i)*e))- (2*(sig2*sig5*pow(2,-2*i)*f))- (2*(sig2*sig6*pow(2,-2*i)*g))- (2*(sig2*sig7*pow(2,-2*i)*h))- (2*(sig2*sig8*pow(2,-2*i)*j))- (2*(sig2*sig9*pow(2,-2*i)*k)) - (2*(sig2*sig10*pow(2,-2*i)*l))- (2*(sig2*sig11*pow(2,-2*i)*m));
+        *s = -(2*(sig3*pow(2,-i)*a)) - (2*(sig1*sig3*pow(2,-2*i)*b)) - (2*(sig2*sig3*pow(2,-2*i)*c)) + ((1+9*pow(2,-2*i))*d) - (2*(sig3*sig4*pow(2,-2*i)*e))- (2*(sig3*sig5*pow(2,-2*i)*f))- (2*(sig3*sig6*pow(2,-2*i)*g))- (2*(sig3*sig7*pow(2,-2*i)*h))- (2*(sig3*sig8*pow(2,-2*i)*j))- (2*(sig3*sig9*pow(2,-2*i)*k)) - (2*(sig3*sig10*pow(2,-2*i)*l))- (2*(sig3*sig11*pow(2,-2*i)*m));
+        *u = -(2*(sig4*pow(2,-i)*a)) - (2*(sig1*sig4*pow(2,-2*i)*b)) - (2*(sig2*sig4*pow(2,-2*i)*c)) - (2*(sig3*sig4*pow(2,-2*i)*d)) + ((1+9*pow(2,-2*i))*e)- (2*(sig4*sig5*pow(2,-2*i)*f))- (2*(sig4*sig6*pow(2,-2*i)*g))- (2*(sig4*sig7*pow(2,-2*i)*h))- (2*(sig4*sig8*pow(2,-2*i)*j))- (2*(sig4*sig9*pow(2,-2*i)*k)) - (2*(sig4*sig10*pow(2,-2*i)*l))- (2*(sig4*sig11*pow(2,-2*i)*m));
+        *v = -(2*(sig5*pow(2,-i)*a)) - (2*(sig1*sig5*pow(2,-2*i)*b)) - (2*(sig2*sig5*pow(2,-2*i)*c)) - (2*(sig3*sig5*pow(2,-2*i)*d)) - (2*(sig4*sig5*pow(2,-2*i)*e))+ ((1+9*pow(2,-2*i))*f)- (2*(sig5*sig6*pow(2,-2*i)*g))- (2*(sig5*sig7*pow(2,-2*i)*h))- (2*(sig5*sig8*pow(2,-2*i)*j))- (2*(sig5*sig9*pow(2,-2*i)*k)) - (2*(sig5*sig10*pow(2,-2*i)*l))- (2*(sig5*sig11*pow(2,-2*i)*m));
+        *w = -(2*(sig6*pow(2,-i)*a)) - (2*(sig1*sig6*pow(2,-2*i)*b)) - (2*(sig2*sig6*pow(2,-2*i)*c)) - (2*(sig3*sig6*pow(2,-2*i)*d)) - (2*(sig4*sig6*pow(2,-2*i)*e))- (2*(sig5*sig6*pow(2,-2*i)*f))+ ((1+9*pow(2,-2*i))*g)- (2*(sig6*sig7*pow(2,-2*i)*h))- (2*(sig6*sig8*pow(2,-2*i)*j))- (2*(sig6*sig9*pow(2,-2*i)*k)) - (2*(sig6*sig10*pow(2,-2*i)*l))- (2*(sig6*sig11*pow(2,-2*i)*m));
+        *x = -(2*(sig7*pow(2,-i)*a)) - (2*(sig1*sig7*pow(2,-2*i)*b)) - (2*(sig2*sig7*pow(2,-2*i)*c)) - (2*(sig3*sig7*pow(2,-2*i)*d)) - (2*(sig4*sig7*pow(2,-2*i)*e))- (2*(sig5*sig7*pow(2,-2*i)*f))- (2*(sig7*sig6*pow(2,-2*i)*g))+ ((1+9*pow(2,-2*i))*h)- (2*(sig7*sig8*pow(2,-2*i)*j))- (2*(sig7*sig9*pow(2,-2*i)*k)) - (2*(sig7*sig10*pow(2,-2*i)*l))- (2*(sig7*sig11*pow(2,-2*i)*m));
+        *y = -(2*(sig8*pow(2,-i)*a)) - (2*(sig1*sig8*pow(2,-2*i)*b)) - (2*(sig2*sig8*pow(2,-2*i)*c)) - (2*(sig3*sig8*pow(2,-2*i)*d)) - (2*(sig4*sig8*pow(2,-2*i)*e))- (2*(sig5*sig8*pow(2,-2*i)*f))- (2*(sig8*sig6*pow(2,-2*i)*g))- (2*(sig8*sig7*pow(2,-2*i)*h))+ ((1+9*pow(2,-2*i))*j)- (2*(sig8*sig9*pow(2,-2*i)*k)) - (2*(sig8*sig10*pow(2,-2*i)*l))- (2*(sig8*sig11*pow(2,-2*i)*m));
+        *z = -(2*(sig9*pow(2,-i)*a)) - (2*(sig1*sig9*pow(2,-2*i)*b)) - (2*(sig2*sig9*pow(2,-2*i)*c)) - (2*(sig3*sig9*pow(2,-2*i)*d)) - (2*(sig4*sig9*pow(2,-2*i)*e))- (2*(sig5*sig9*pow(2,-2*i)*f))- (2*(sig9*sig6*pow(2,-2*i)*g))- (2*(sig9*sig7*pow(2,-2*i)*h))- (2*(sig9*sig8*pow(2,-2*i)*j))+ ((1+9*pow(2,-2*i))*k) - (2*(sig9*sig10*pow(2,-2*i)*l))- (2*(sig9*sig11*pow(2,-2*i)*m));
+        *n = -(2*(sig10*pow(2,-i)*a)) - (2*(sig1*sig10*pow(2,-2*i)*b)) - (2*(sig2*sig10*pow(2,-2*i)*c)) - (2*(sig3*sig10*pow(2,-2*i)*d)) - (2*(sig4*sig10*pow(2,-2*i)*e))- (2*(sig5*sig10*pow(2,-2*i)*f))- (2*(sig10*sig6*pow(2,-2*i)*g))- (2*(sig10*sig7*pow(2,-2*i)*h))- (2*(sig10*sig8*pow(2,-2*i)*j))- (2*(sig10*sig9*pow(2,-2*i)*k))+ ((1+9*pow(2,-2*i))*l) - (2*(sig10*sig11*pow(2,-2*i)*m));
+        *o = -(2*(sig11*pow(2,-i)*a)) - (2*(sig1*sig11*pow(2,-2*i)*b)) - (2*(sig2*sig11*pow(2,-2*i)*c)) - (2*(sig3*sig11*pow(2,-2*i)*d)) - (2*(sig4*sig11*pow(2,-2*i)*e))- (2*(sig5*sig11*pow(2,-2*i)*f))- (2*(sig11*sig6*pow(2,-2*i)*g))- (2*(sig11*sig7*pow(2,-2*i)*h))- (2*(sig11*sig8*pow(2,-2*i)*j))- (2*(sig11*sig9*pow(2,-2*i)*k))- (2*(sig11*sig10*pow(2,-2*i)*l))+ ((1+9*pow(2,-2*i))*m);
+
+        a=*p;b=*q;c=*r;d=*s;e=*u;f=*v;g=*w;h=*x;j=*y;k=*z;l=*n;m=*o;
+
+        }
+
+        *p=a*scaling;
+        *q=b*scaling;
+        *r=c*scaling;
+        *s=d*scaling;
+        *u=e*scaling;
+        *v=f*scaling;
+        *w=g*scaling;
+        *x=h*scaling;
+        *y=j*scaling;
+        *z=k*scaling;
+        *n=l*scaling;
+        *o=m*scaling;
+
+
+}
+
+
+*/
+
+
+void QRD_12D(double A[12][12]){
+    int c_1[176],c_2[176],c_3[176],c_4[176],c_5[176],c_6[176],c_7[176],c_8[176],c_9[176],c_10[176],c_11[176];
+    int c1[176],c2[176],c3[176],c4[176],c5[176],c6[176],c7[176],c8[176],c9[176],c10[176],c11[176];
+    double z =0;
+
+    vec_12D(&A[0][0],&A[1][0],&A[2][0],&A[3][0],&A[4][0],&A[5][0],&A[6][0],&A[7][0],&A[8][0],&A[9][0],&A[10][0],&A[11][0]);
+  /*  for(int i=0; i<176; i++) {c1[i] = c_1[i];}
+    rot_12D(&A[0][1],&A[1][1],&A[2][1],&A[3][1],&A[4][1],&A[5][1],&A[6][1],&A[7][1],&A[8][1],&A[9][1],&A[10][1],&A[11][1],c1);
+    rot_12D(&A[0][2],&A[1][2],&A[2][2],&A[3][2],&A[4][2],&A[5][2],&A[6][2],&A[7][2],&A[8][2],&A[9][2],&A[10][2],&A[11][2],c1);
+    rot_12D(&A[0][3],&A[1][3],&A[2][3],&A[3][3],&A[4][3],&A[5][3],&A[6][3],&A[7][3],&A[8][3],&A[9][3],&A[10][3],&A[11][3],c1);
+    rot_12D(&A[0][4],&A[1][4],&A[2][4],&A[3][4],&A[4][4],&A[5][4],&A[6][4],&A[7][4],&A[8][4],&A[9][4],&A[10][4],&A[11][4],c1);
+    rot_12D(&A[0][5],&A[1][5],&A[2][5],&A[3][5],&A[4][5],&A[5][5],&A[6][5],&A[7][5],&A[8][5],&A[9][5],&A[10][5],&A[11][5],c1);
+    rot_12D(&A[0][6],&A[1][6],&A[2][6],&A[3][6],&A[4][6],&A[5][6],&A[6][6],&A[7][6],&A[8][6],&A[9][6],&A[10][6],&A[11][6],c1);
+    rot_12D(&A[0][7],&A[1][7],&A[2][7],&A[3][7],&A[4][7],&A[5][7],&A[6][7],&A[7][7],&A[8][7],&A[9][7],&A[10][7],&A[11][7],c1);
+    rot_12D(&A[0][8],&A[1][8],&A[2][8],&A[3][8],&A[4][8],&A[5][8],&A[6][8],&A[7][8],&A[8][8],&A[9][8],&A[10][8],&A[11][8],c1);
+    rot_12D(&A[0][9],&A[1][9],&A[2][9],&A[3][9],&A[4][9],&A[5][9],&A[6][9],&A[7][9],&A[8][9],&A[9][9],&A[10][9],&A[11][9],c1);
+    rot_12D(&A[0][10],&A[1][10],&A[2][10],&A[3][10],&A[4][10],&A[5][10],&A[6][10],&A[7][10],&A[8][10],&A[9][10],&A[10][10],&A[11][10],c1);
+    rot_12D(&A[0][11],&A[1][11],&A[2][11],&A[3][11],&A[4][11],&A[5][11],&A[6][11],&A[7][11],&A[8][11],&A[9][11],&A[10][11],&A[11][11],c1);
+
+    vec_12D(&A[1][1],&A[2][1],&A[3][1],&A[4][1],&A[5][1],&A[6][1],&A[7][1],&A[8][1],&A[9][1],&A[10][1],&A[11][1],&z);
+    for(int i=0; i<176; i++) {c2[i] = c_2[i];}
+    rot_12D(&A[1][2],&A[2][2],&A[3][2],&A[4][2],&A[5][2],&A[6][2],&A[7][2],&A[8][2],&A[9][2],&A[10][2],&A[11][2],&z,c2);
+    rot_12D(&A[1][3],&A[2][3],&A[3][3],&A[4][3],&A[5][3],&A[6][3],&A[7][3],&A[8][3],&A[9][3],&A[10][3],&A[11][3],&z,c2);
+    rot_12D(&A[1][4],&A[2][4],&A[3][4],&A[4][4],&A[5][4],&A[6][4],&A[7][4],&A[8][4],&A[9][4],&A[10][4],&A[11][4],&z,c2);
+    rot_12D(&A[1][5],&A[2][5],&A[3][5],&A[4][5],&A[5][5],&A[6][5],&A[7][5],&A[8][5],&A[9][5],&A[10][5],&A[11][5],&z,c2);
+    rot_12D(&A[1][6],&A[2][6],&A[3][6],&A[4][6],&A[5][6],&A[6][6],&A[7][6],&A[8][6],&A[9][6],&A[10][6],&A[11][6],&z,c2);
+    rot_12D(&A[1][7],&A[2][7],&A[3][7],&A[4][7],&A[5][7],&A[6][7],&A[7][7],&A[8][7],&A[9][7],&A[10][7],&A[11][7],&z,c2);
+    rot_12D(&A[1][8],&A[2][8],&A[3][8],&A[4][8],&A[5][8],&A[6][8],&A[7][8],&A[8][8],&A[9][8],&A[10][8],&A[11][8],&z,c2);
+    rot_12D(&A[1][9],&A[2][9],&A[3][9],&A[4][9],&A[5][9],&A[6][9],&A[7][9],&A[8][9],&A[9][9],&A[10][9],&A[11][9],&z,c2);
+    rot_12D(&A[1][10],&A[2][10],&A[3][10],&A[4][10],&A[5][10],&A[6][10],&A[7][10],&A[8][10],&A[9][10],&A[10][10],&A[11][10],&z,c2);
+    rot_12D(&A[1][11],&A[2][11],&A[3][11],&A[4][11],&A[5][11],&A[6][11],&A[7][11],&A[8][11],&A[9][11],&A[10][11],&A[11][11],&z,c2);
+
+    vec_12D(&A[2][2],&A[3][2],&A[4][2],&A[5][2],&A[6][2],&A[7][2],&A[8][2],&A[9][2],&A[10][2],&A[11][2],&z,&z);
+    for(int i=0; i<176; i++) {c3[i] = c_3[i];}
+    rot_12D(&A[2][3],&A[3][3],&A[4][3],&A[5][3],&A[6][3],&A[7][3],&A[8][3],&A[9][3],&A[10][3],&A[11][3],&z,&z,c3);
+    rot_12D(&A[2][4],&A[3][4],&A[4][4],&A[5][4],&A[6][4],&A[7][4],&A[8][4],&A[9][4],&A[10][4],&A[11][4],&z,&z,c3);
+    rot_12D(&A[2][5],&A[3][5],&A[4][5],&A[5][5],&A[6][5],&A[7][5],&A[8][5],&A[9][5],&A[10][5],&A[11][5],&z,&z,c3);
+    rot_12D(&A[2][6],&A[3][6],&A[4][6],&A[5][6],&A[6][6],&A[7][6],&A[8][6],&A[9][6],&A[10][6],&A[11][6],&z,&z,c3);
+    rot_12D(&A[2][7],&A[3][7],&A[4][7],&A[5][7],&A[6][7],&A[7][7],&A[8][7],&A[9][7],&A[10][7],&A[11][7],&z,&z,c3);
+    rot_12D(&A[2][8],&A[3][8],&A[4][8],&A[5][8],&A[6][8],&A[7][8],&A[8][8],&A[9][8],&A[10][8],&A[11][8],&z,&z,c3);
+    rot_12D(&A[2][9],&A[3][9],&A[4][9],&A[5][9],&A[6][9],&A[7][9],&A[8][9],&A[9][9],&A[10][9],&A[11][9],&z,&z,c3);
+    rot_12D(&A[2][10],&A[3][10],&A[4][10],&A[5][10],&A[6][10],&A[7][10],&A[8][10],&A[9][10],&A[10][10],&A[11][10],&z,&z,c3);
+    rot_12D(&A[2][11],&A[3][11],&A[4][11],&A[5][11],&A[6][11],&A[7][11],&A[8][11],&A[9][11],&A[10][11],&A[11][11],&z,&z,c3);
+
+    vec_12D(&A[3][3],&A[4][3],&A[5][3],&A[6][3],&A[7][3],&A[8][3],&A[9][3],&A[10][3],&A[11][3],&z,&z,&z);
+    for(int i=0; i<176; i++) {c4[i] = c_4[i];}
+    rot_12D(&A[3][4],&A[4][4],&A[5][4],&A[6][4],&A[7][4],&A[8][4],&A[9][4],&A[10][4],&A[11][4],&z,&z,&z,c4);
+    rot_12D(&A[3][5],&A[4][5],&A[5][5],&A[6][5],&A[7][5],&A[8][5],&A[9][5],&A[10][5],&A[11][5],&z,&z,&z,c4);
+    rot_12D(&A[3][6],&A[4][6],&A[5][6],&A[6][6],&A[7][6],&A[8][6],&A[9][6],&A[10][6],&A[11][6],&z,&z,&z,c4);
+    rot_12D(&A[3][7],&A[4][7],&A[5][7],&A[6][7],&A[7][7],&A[8][7],&A[9][7],&A[10][7],&A[11][7],&z,&z,&z,c4);
+    rot_12D(&A[3][8],&A[4][8],&A[5][8],&A[6][8],&A[7][8],&A[8][8],&A[9][8],&A[10][8],&A[11][8],&z,&z,&z,c4);
+    rot_12D(&A[3][9],&A[4][9],&A[5][9],&A[6][9],&A[7][9],&A[8][9],&A[9][9],&A[10][9],&A[11][9],&z,&z,&z,c4);
+    rot_12D(&A[3][10],&A[4][10],&A[5][10],&A[6][10],&A[7][10],&A[8][10],&A[9][10],&A[10][10],&A[11][10],&z,&z,&z,c4);
+    rot_12D(&A[3][11],&A[4][11],&A[5][11],&A[6][11],&A[7][11],&A[8][11],&A[9][11],&A[10][11],&A[11][11],&z,&z,&z,c4);
+
+    vec_12D(&A[4][4],&A[5][4],&A[6][4],&A[7][4],&A[8][4],&A[9][4],&A[10][4],&A[11][4],&z,&z,&z,&z);
+    for(int i=0; i<176; i++) {c5[i] = c_5[i];}
+    rot_12D(&A[4][5],&A[5][5],&A[6][5],&A[7][5],&A[8][5],&A[9][5],&A[10][5],&A[11][5],&z,&z,&z,&z,c5);
+    rot_12D(&A[4][6],&A[5][6],&A[6][6],&A[7][6],&A[8][6],&A[9][6],&A[10][6],&A[11][6],&z,&z,&z,&z,c5);
+    rot_12D(&A[4][7],&A[5][7],&A[6][7],&A[7][7],&A[8][7],&A[9][7],&A[10][7],&A[11][7],&z,&z,&z,&z,c5);
+    rot_12D(&A[4][8],&A[5][8],&A[6][8],&A[7][8],&A[8][8],&A[9][8],&A[10][8],&A[11][8],&z,&z,&z,&z,c5);
+    rot_12D(&A[4][9],&A[5][9],&A[6][9],&A[7][9],&A[8][9],&A[9][9],&A[10][9],&A[11][9],&z,&z,&z,&z,c5);
+    rot_12D(&A[4][10],&A[5][10],&A[6][10],&A[7][10],&A[8][10],&A[9][10],&A[10][10],&A[11][10],&z,&z,&z,&z,c5);
+    rot_12D(&A[4][11],&A[5][11],&A[6][11],&A[7][11],&A[8][11],&A[9][11],&A[10][11],&A[11][11],&z,&z,&z,&z,c5);
+
+    vec_12D(&A[5][5],&A[6][5],&A[7][5],&A[8][5],&A[9][5],&A[10][5],&A[11][5],&z,&z,&z,&z,&z);
+    for(int i=0; i<176; i++) {c6[i] = c_6[i];}
+    rot_12D(&A[5][6],&A[6][6],&A[7][6],&A[8][6],&A[9][6],&A[10][6],&A[11][6],&z,&z,&z,&z,&z,c6);
+    rot_12D(&A[5][7],&A[6][7],&A[7][7],&A[8][7],&A[9][7],&A[10][7],&A[11][7],&z,&z,&z,&z,&z,c6);
+    rot_12D(&A[5][8],&A[6][8],&A[7][8],&A[8][8],&A[9][8],&A[10][8],&A[11][8],&z,&z,&z,&z,&z,c6);
+    rot_12D(&A[5][9],&A[6][9],&A[7][9],&A[8][9],&A[9][9],&A[10][9],&A[11][9],&z,&z,&z,&z,&z,c6);
+    rot_12D(&A[5][10],&A[6][10],&A[7][10],&A[8][10],&A[9][10],&A[10][10],&A[11][10],&z,&z,&z,&z,&z,c6);
+    rot_12D(&A[5][11],&A[6][11],&A[7][11],&A[8][11],&A[9][11],&A[10][11],&A[11][11],&z,&z,&z,&z,&z,c6);
+    vec_12D(&A[6][6],&A[7][6],&A[8][6],&A[9][6],&A[10][6],&A[11][6],&z,&z,&z,&z,&z,&z);
+    for(int i=0; i<176; i++) {c7[i] = c_7[i];}
+    rot_12D(&A[6][7],&A[7][7],&A[8][7],&A[9][7],&A[10][7],&A[11][7],&z,&z,&z,&z,&z,&z,c7);
+    rot_12D(&A[6][8],&A[7][8],&A[8][8],&A[9][8],&A[10][8],&A[11][8],&z,&z,&z,&z,&z,&z,c7);
+    rot_12D(&A[6][9],&A[7][9],&A[8][9],&A[9][9],&A[10][9],&A[11][9],&z,&z,&z,&z,&z,&z,c7);
+    rot_12D(&A[6][10],&A[7][10],&A[8][10],&A[9][10],&A[10][10],&A[11][10],&z,&z,&z,&z,&z,&z,c7);
+    rot_12D(&A[6][11],&A[7][11],&A[8][11],&A[9][11],&A[10][11],&A[11][11],&z,&z,&z,&z,&z,&z,c7);
+
+    vec_12D(&A[7][7],&A[8][7],&A[9][7],&A[10][7],&A[11][7],&z,&z,&z,&z,&z,&z,&z);
+    for(int i=0; i<176; i++) {c8[i] = c_8[i];}
+    rot_12D(&A[7][8],&A[8][8],&A[9][8],&A[10][8],&A[11][8],&z,&z,&z,&z,&z,&z,&z,c8);
+    rot_12D(&A[7][9],&A[8][9],&A[9][9],&A[10][9],&A[11][9],&z,&z,&z,&z,&z,&z,&z,c8);
+    rot_12D(&A[7][10],&A[8][10],&A[9][10],&A[10][10],&A[11][10],&z,&z,&z,&z,&z,&z,&z,c8);
+    rot_12D(&A[7][11],&A[8][11],&A[9][11],&A[10][11],&A[11][11],&z,&z,&z,&z,&z,&z,&z,c8);
+
+    vec_12D(&A[8][8],&A[9][8],&A[10][8],&A[11][8],&z,&z,&z,&z,&z,&z,&z,&z);
+    for(int i=0; i<176; i++) {c9[i] = c_9[i];}
+    rot_12D(&A[8][9],&A[9][9],&A[10][9],&A[11][9],&z,&z,&z,&z,&z,&z,&z,&z,c9);
+    rot_12D(&A[8][10],&A[9][10],&A[10][10],&A[11][10],&z,&z,&z,&z,&z,&z,&z,&z,c9);
+    rot_12D(&A[8][11],&A[9][11],&A[10][11],&A[11][11],&z,&z,&z,&z,&z,&z,&z,&z,c9);
+
+    vec_12D(&A[9][9],&A[10][9],&A[11][9],&z,&z,&z,&z,&z,&z,&z,&z,&z);
+    for(int i=0; i<176; i++) {c10[i] = c_10[i];}
+    rot_12D(&A[9][10],&A[10][10],&A[11][10],&z,&z,&z,&z,&z,&z,&z,&z,&z,c10);
+    rot_12D(&A[9][11],&A[10][11],&A[11][11],&z,&z,&z,&z,&z,&z,&z,&z,&z,c10);
+
+    vec_12D(&A[10][10],&A[11][10],&z,&z,&z,&z,&z,&z,&z,&z,&z,&z);
+    for(int i=0; i<176; i++) {c11[i] = c_11[i];}
+    rot_12D(&A[10][11],&A[11][11],&z,&z,&z,&z,&z,&z,&z,&z,&z,&z,c11);
+
+*/
+
+}
+
